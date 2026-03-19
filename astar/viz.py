@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.patches import Patch
-from pathlib import Path
 
 from .replay import (
     TERRAIN_TO_CLASS, CLASS_NAMES, NUM_CLASSES,

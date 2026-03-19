@@ -100,16 +100,16 @@ The simulation is **stochastic** — same initial state produces different outco
 
 ### 2.2 Systematic Grid Coverage
 
-A 40×40 map with 15×15 viewport → you need a 3×3 grid of viewports to cover the full map (with overlap):
+A 40×40 map with 15×15 viewport → you need a 3×3 grid of viewports to cover the full map (with 1-cell overlap). The toolkit's `simulate_grid()` uses step 14:
 
 ```
-Viewport positions for full coverage:
-  (0,0)   (13,0)  (25,0)
-  (0,13)  (13,13) (25,13)
-  (0,25)  (13,25) (25,25)
+Viewport positions for full coverage (step 14):
+  (0,0)   (14,0)  (25,0)
+  (0,14)  (14,14) (25,14)
+  (0,25)  (14,25) (25,25)
 ```
 
-That's 9 queries for one full scan of one seed. With 50 total, you can do ~5 full scans across different seeds, or a mix of full scans and repeated observations.
+The last column/row starts at 25 (= 40 - 15) to fit within bounds. That's 9 queries for one full scan of one seed. With 50 total, you can do ~5 full scans across different seeds, or a mix of full scans and repeated observations.
 
 ### 2.3 Rate Limit
 
