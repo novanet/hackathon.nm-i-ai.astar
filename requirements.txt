@@ -1,3 +1,5 @@
 numpy
 matplotlib
 requests
+scipy
+scikit-learn
