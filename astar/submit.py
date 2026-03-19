@@ -16,20 +16,26 @@ from .replay import load_analysis, NUM_CLASSES
 def score_prediction(prediction: np.ndarray, ground_truth: np.ndarray) -> float:
     """
     Local scorer: entropy-weighted KL divergence → score on [0, 100].
-    Matches the official scoring formula.
+    Matches the official scoring formula:
+        score = max(0, min(100, 100 * exp(-3 * weighted_kl)))
     """
     eps = 1e-10
-    q = ground_truth
-    p = prediction
+    p = np.clip(ground_truth, eps, 1.0)   # ground truth
+    q = np.clip(prediction, eps, 1.0)     # your prediction
 
-    entropy = -np.sum(q * np.log(np.clip(q, eps, 1.0)), axis=-1)
-    w = entropy / (entropy.sum() + eps)
+    # Per-cell KL divergence: KL(p || q)
+    kl = np.sum(p * np.log(p / q), axis=-1)
 
-    kl = np.sum(q * np.log(np.clip(q, eps, 1.0) / np.clip(p, eps, 1.0)), axis=-1)
-    weighted_kl = np.sum(w * kl)
-    max_kl = -np.log(0.01)  # worst case with floor
+    # Per-cell entropy (weights)
+    entropy = -np.sum(p * np.log(p), axis=-1)
 
-    return max(0.0, 100.0 * (1.0 - weighted_kl / max_kl))
+    total_entropy = np.sum(entropy)
+    if total_entropy < eps:
+        return 100.0  # all cells static → perfect by default
+
+    weighted_kl = np.sum(entropy * kl) / total_entropy
+
+    return max(0.0, min(100.0, 100.0 * np.exp(-3.0 * weighted_kl)))
 
 
 def submit_round(round_id: str, seeds: list[int] | None = None,

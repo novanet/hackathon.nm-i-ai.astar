@@ -212,17 +212,18 @@ All seeds in a round share the same **hidden parameters** (growth rates, winter 
 
 ```
 astar/
-├── client.py              # API client (auth, query, submit)
-├── strategy.py            # Query budget allocation logic
-├── model.py               # Prediction model (prior + observation updates)
-├── submit.py              # Tensor construction, floor enforcement, submission
-├── analysis.py            # Post-round comparison with ground truth
-├── data/
-│   └── round_{id}/        # Stored observations per round
-│       ├── seed_0/
-│       ├── seed_1/
-│       └── ...
-└── runs.md                # Score tracking per submission
+├── __init__.py            # Package init
+├── client.py              # API client with auto-logging to data/
+├── replay.py              # Offline replay store (load logged responses)
+├── model.py               # Prediction model (prior + observation updates + floor)
+├── viz.py                 # Matplotlib visualizations (grids, heatmaps, comparisons)
+├── submit.py              # Orchestrator: build predictions, local scorer, submit
+data/
+└── round_{id}/            # Auto-logged observations per round (flat files)
+    ├── round_detail_*.json
+    ├── sim_s0_x0_y0_*.json
+    ├── analysis_s0_*.json
+    └── ...
 ```
 
 ### Key Design Decisions
