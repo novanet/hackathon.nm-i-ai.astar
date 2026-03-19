@@ -10,6 +10,7 @@ Builds a 40×40×6 probability tensor from:
 """
 
 import numpy as np
+from pathlib import Path
 from scipy.ndimage import gaussian_filter
 from .replay import (
     TERRAIN_TO_CLASS, CLASS_NAMES, NUM_CLASSES,
@@ -51,16 +52,25 @@ def initial_prior(round_detail: dict, seed_index: int,
     return prior
 
 
-def empirical_model(round_id: str, seed_index: int,
-                    map_w: int = 40, map_h: int = 40,
-                    prior: np.ndarray | None = None) -> np.ndarray:
-    """
-    Build prediction from empirical observation frequencies.
+PRIOR_STRENGTH = 20.0  # Dirichlet concentration — how much to trust the prior vs observations
 
-    For observed cells: use frequency distribution.
-    For unobserved cells: fall back to prior (if given) or uniform.
+
+def bayesian_update(round_id: str, seed_index: int,
+                    map_w: int = 40, map_h: int = 40,
+                    prior: np.ndarray | None = None,
+                    prior_strength: float = PRIOR_STRENGTH) -> np.ndarray:
     """
-    emp = build_empirical_distribution(round_id, seed_index, map_w, map_h)
+    Bayesian Dirichlet-Multinomial update: blend prior with observations.
+
+    Instead of replacing the prior with raw frequencies (which makes 1 obs
+    snap to 100% confidence), we treat the prior as a Dirichlet with
+    concentration α = prior × prior_strength, then add observation counts.
+
+    posterior_mean = (α + obs_counts) / (sum(α) + n_obs)
+
+    For unobserved cells: returns the prior unchanged.
+    """
+    obs_grid = build_observation_grid(round_id, seed_index, map_w, map_h)
     pred = np.full((map_h, map_w, NUM_CLASSES), 1.0 / NUM_CLASSES, dtype=np.float64)
 
     if prior is not None:
@@ -68,8 +78,16 @@ def empirical_model(round_id: str, seed_index: int,
 
     for y in range(map_h):
         for x in range(map_w):
-            if emp[y][x] is not None:
-                pred[y, x] = emp[y][x]
+            obs = obs_grid[y][x]
+            if not obs:
+                continue
+            # Dirichlet prior: α = prior_probs × prior_strength
+            alpha = pred[y, x] * prior_strength
+            # Add observation counts
+            for cls in obs:
+                alpha[cls] += 1.0
+            # Posterior mean
+            pred[y, x] = alpha / alpha.sum()
 
     return pred
 
@@ -223,47 +241,135 @@ def apply_floor(pred: np.ndarray, floor: float = PROB_FLOOR) -> np.ndarray:
     return floored / sums
 
 
+# ── Spatial Conditional Model ──────────────────────────────────────────────
+
+def compute_cell_features(init_grid: list[list[int]],
+                          map_w: int = 40, map_h: int = 40) -> np.ndarray:
+    """
+    Compute spatial features for every cell from the initial state.
+
+    Features per cell (18 total):
+      - initial class one-hot (6)
+      - 3×3 neighborhood class counts (6), normalized
+      - 5×5 neighborhood class counts (6), normalized (captures wider context)
+
+    Returns: (H, W, 18) feature array
+    """
+    n_feat = 6 + 6 + 6  # one-hot + 3x3 counts + 5x5 counts
+    features = np.zeros((map_h, map_w, n_feat), dtype=np.float64)
+
+    # Convert grid to class indices
+    cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                          for x in range(map_w)] for y in range(map_h)])
+
+    for y in range(map_h):
+        for x in range(map_w):
+            idx = 0
+            # One-hot initial class
+            features[y, x, cls_grid[y, x]] = 1.0
+            idx = 6
+
+            # 3×3 neighborhood counts (excluding self)
+            for dy in range(-1, 2):
+                for dx in range(-1, 2):
+                    if dy == 0 and dx == 0:
+                        continue
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < map_h and 0 <= nx < map_w:
+                        features[y, x, idx + cls_grid[ny, nx]] += 1.0
+            # Normalize by number of valid neighbors
+            n3 = features[y, x, idx:idx+6].sum()
+            if n3 > 0:
+                features[y, x, idx:idx+6] /= n3
+            idx += 6
+
+            # 5×5 neighborhood counts (excluding 3×3 inner ring and self)
+            for dy in range(-2, 3):
+                for dx in range(-2, 3):
+                    if abs(dy) <= 1 and abs(dx) <= 1:
+                        continue  # skip inner 3×3
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < map_h and 0 <= nx < map_w:
+                        features[y, x, idx + cls_grid[ny, nx]] += 1.0
+            n5 = features[y, x, idx:idx+6].sum()
+            if n5 > 0:
+                features[y, x, idx:idx+6] /= n5
+
+    return features
+
+
+_spatial_model = None  # cached trained model
+
+
+def load_spatial_model():
+    """Load the trained spatial model from disk, or return None."""
+    global _spatial_model
+    if _spatial_model is not None:
+        return _spatial_model
+    import pickle
+    model_path = Path(__file__).parent.parent / "data" / "spatial_model.pkl"
+    if model_path.exists():
+        _spatial_model = pickle.loads(model_path.read_bytes())
+        return _spatial_model
+    return None
+
+
+def spatial_prior(round_detail: dict, seed_index: int,
+                  map_w: int = 40, map_h: int = 40) -> np.ndarray | None:
+    """
+    Use trained spatial model to predict per-cell distributions from initial state features.
+    Returns (H, W, 6) or None if no model available.
+    """
+    model = load_spatial_model()
+    if model is None:
+        return None
+
+    init_grid = round_detail["initial_states"][seed_index]["grid"]
+    features = compute_cell_features(init_grid, map_w, map_h)
+
+    # Flatten to (H*W, n_features), predict, reshape
+    flat_features = features.reshape(-1, features.shape[-1])
+    flat_pred = model.predict(flat_features)  # (H*W, 6)
+    pred = flat_pred.reshape(map_h, map_w, NUM_CLASSES)
+
+    # Ensure valid probabilities
+    pred = np.maximum(pred, 1e-10)
+    pred = pred / pred.sum(axis=-1, keepdims=True)
+    return pred
+
+
 def build_prediction(round_id: str, round_detail: dict, seed_index: int,
                      map_w: int = 40, map_h: int = 40) -> np.ndarray:
     """
     Full prediction pipeline:
-      1. Initial state prior
-      2. Cross-seed transition prior (shared hidden params)
-      3. Empirical update from observations
-      4. Spatial smoothing (Gaussian) for unobserved cells
-      5. Neighbor inference for remaining gaps
-      6. Floor enforcement
+      1. Spatial model prior (if available) OR transition-based prior
+      2. Cross-seed transition prior (refines when observations exist)
+      3. Bayesian update from observations (Dirichlet-Multinomial)
+      4. Floor enforcement
 
     Returns: (H, W, 6) probability tensor ready for submission.
     """
-    # 1. Prior from initial terrain
-    prior = initial_prior(round_detail, seed_index, map_w, map_h)
+    # 1. Best available prior: spatial model > cross-seed transitions > historical transitions
+    sp = spatial_prior(round_detail, seed_index, map_w, map_h)
 
-    # 2. Cross-seed transition prior (overrides initial prior when available)
     xseed = cross_seed_transition_prior(round_id, round_detail, seed_index, map_w, map_h)
-    if xseed is not None:
-        # Pure transition model dominates initial prior (backtested: alpha=1.0 >> blends)
+
+    if sp is not None and xseed is not None:
+        # Blend spatial model with round-specific transitions (70/30 backtested)
+        prior = 0.7 * sp + 0.3 * xseed
+        prior = prior / prior.sum(axis=-1, keepdims=True)
+    elif sp is not None:
+        prior = sp
+    elif xseed is not None:
         prior = xseed
     else:
-        # No observations yet — use historical transition matrix as prior
         prior = _apply_transition_matrix(round_detail, seed_index,
                                          HISTORICAL_TRANSITIONS, map_w, map_h)
 
-    # 3. Empirical update from this seed's observations
-    pred = empirical_model(round_id, seed_index, map_w, map_h, prior=prior)
+    # 2. Bayesian update from this seed's observations
+    pred = bayesian_update(round_id, seed_index, map_w, map_h, prior=prior)
 
-    # 4. Build observation mask and apply spatial smoothing
-    obs_grid = build_observation_grid(round_id, seed_index, map_w, map_h)
-    obs_mask = np.array([[bool(obs_grid[y][x]) for x in range(map_w)]
-                         for y in range(map_h)])
-
-    if obs_mask.any():
-        pred = spatial_smooth(pred, obs_mask, sigma=1.5)
-
-    # 5. Neighbor inference for any remaining unobserved cells
-    pred = neighbor_inference(pred, obs_grid)
-
-    # 6. Floor enforcement
+    # 3. Floor enforcement
     return apply_floor(pred)
 
 
