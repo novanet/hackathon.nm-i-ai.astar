@@ -287,6 +287,77 @@ for seed_index in range(5):
 
 ---
 
+## Toolkit (`astar/` package)
+
+This repo includes a Python toolkit for querying, logging, replaying, modelling, visualizing, and submitting predictions.
+
+### Setup
+
+```bash
+pip install numpy matplotlib requests
+export ASTAR_TOKEN="<your JWT from app.ainm.no>"   # PowerShell: $env:ASTAR_TOKEN="..."
+```
+
+### Modules
+
+| Module | Description |
+|---|---|
+| `astar/client.py` | API client. Every `/simulate`, `/analysis`, and `/rounds/{id}` response is auto‑logged to `data/round_{id}/` as timestamped JSON. |
+| `astar/replay.py` | Offline replay store. Load logged responses to build models without network calls. Key helpers: `build_observation_grid()`, `build_empirical_distribution()`. |
+| `astar/model.py` | Prediction pipeline: initial‑state prior → empirical update → neighbor inference → floor enforcement (0.01). |
+| `astar/viz.py` | Matplotlib visualizations: terrain grids, observation coverage heatmaps, prediction confidence, pred vs truth diff, entropy maps, per‑cell bar charts. |
+| `astar/submit.py` | Orchestrator: build predictions for all seeds and submit. Includes local scorer. |
+
+### Workflow
+
+```python
+from astar import client, replay, model, viz
+
+# 1. Query the API — responses are auto-saved to data/
+round_id = "..."
+detail = client.get_round_detail(round_id)
+client.simulate_grid(round_id, seed_index=0)
+
+# 2. Visualize what you've observed
+viz.plot_initial_states(detail)
+viz.plot_observation_coverage(round_id, seed_index=0)
+
+# 3. Build prediction offline from logged data
+pred = model.build_prediction(round_id, detail, seed_index=0)
+viz.plot_prediction(pred)
+
+# 4. Submit
+client.submit(round_id, seed_index=0, prediction=model.prediction_to_list(pred))
+```
+
+### CLI
+
+```bash
+# Submit all seeds (builds predictions automatically)
+python -m astar.submit <round_id>
+
+# Dry run with local scoring (needs ground truth from /analysis)
+python -m astar.submit <round_id> --dry-run
+
+# Submit specific seeds only
+python -m astar.submit <round_id> --seeds 0,2,4
+```
+
+### Data Layout
+
+```
+data/
+  round_{id}/
+    round_detail_20260319T180000.json
+    sim_s0_x0_y0_20260319T180005.json
+    sim_s0_x14_y0_20260319T180006.json
+    ...
+    analysis_s0_20260322T150000.json
+    submit_s0_20260319T190000.json
+```
+
+---
+
 ## Competition Rules
 
 - **Prize pool**: 1,000,000 NOK (1st: 400k, 2nd: 300k, 3rd: 200k, Best U23: 100k)
