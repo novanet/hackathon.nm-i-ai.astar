@@ -2,12 +2,11 @@
 Prediction model for Astar Island.
 
 Builds a 40×40×6 probability tensor from:
-  1. Static prior (initial terrain state)
+  1. Transition prior (historical + cross-seed observations)
   2. Bayesian update with simulation observations
   3. Spatial smoothing (scipy gaussian filter) for unobserved cells
-  4. Cross-seed inference (shared hidden parameters)
-  5. Neighbor-based inference for remaining gaps
-  6. Probability floor enforcement (0.01)
+  4. Neighbor-based inference for remaining gaps
+  5. Probability floor enforcement (0.001)
 """
 
 import numpy as np
@@ -18,7 +17,20 @@ from .replay import (
     build_observation_grid, build_empirical_distribution,
 )
 
-PROB_FLOOR = 0.01
+PROB_FLOOR = 0.001
+
+# Historical transition matrix derived from Rounds 1+2 backtesting.
+# Used as fallback when no observations are available for the current round.
+# Rows = initial class, Cols = final class.
+# Order: Empty, Settlement, Port, Ruin, Forest, Mountain
+HISTORICAL_TRANSITIONS = np.array([
+    [0.795, 0.147, 0.012, 0.014, 0.034, 0.000],  # Empty →
+    [0.380, 0.396, 0.006, 0.043, 0.177, 0.000],  # Settlement →
+    [0.391, 0.060, 0.451, 0.011, 0.088, 0.000],  # Port →
+    [0.500, 0.000, 0.000, 0.500, 0.000, 0.000],  # Ruin → (sparse)
+    [0.090, 0.175, 0.015, 0.016, 0.705, 0.000],  # Forest →
+    [0.000, 0.000, 0.000, 0.000, 0.000, 1.000],  # Mountain →
+])
 
 
 def initial_prior(round_detail: dict, seed_index: int,
@@ -188,6 +200,19 @@ def cross_seed_transition_prior(round_id: str, round_detail: dict,
     return prior
 
 
+def _apply_transition_matrix(round_detail: dict, seed_index: int,
+                             transition_matrix: np.ndarray,
+                             map_w: int = 40, map_h: int = 40) -> np.ndarray:
+    """Apply a transition matrix to a seed's initial state to produce a prior."""
+    init_grid = round_detail["initial_states"][seed_index]["grid"]
+    prior = np.zeros((map_h, map_w, NUM_CLASSES), dtype=np.float64)
+    for y in range(map_h):
+        for x in range(map_w):
+            init_cls = TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+            prior[y, x] = transition_matrix[init_cls]
+    return prior
+
+
 def apply_floor(pred: np.ndarray, floor: float = PROB_FLOOR) -> np.ndarray:
     """
     Enforce minimum probability floor and renormalize.
@@ -214,13 +239,15 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
     # 1. Prior from initial terrain
     prior = initial_prior(round_detail, seed_index, map_w, map_h)
 
-    # 2. Cross-seed transition prior (blend with initial prior)
+    # 2. Cross-seed transition prior (overrides initial prior when available)
     xseed = cross_seed_transition_prior(round_id, round_detail, seed_index, map_w, map_h)
     if xseed is not None:
-        # Blend: 60% cross-seed transitions, 40% initial state prior
-        prior = 0.6 * xseed + 0.4 * prior
-        sums = prior.sum(axis=-1, keepdims=True)
-        prior = prior / np.maximum(sums, 1e-10)
+        # Pure transition model dominates initial prior (backtested: alpha=1.0 >> blends)
+        prior = xseed
+    else:
+        # No observations yet — use historical transition matrix as prior
+        prior = _apply_transition_matrix(round_detail, seed_index,
+                                         HISTORICAL_TRANSITIONS, map_w, map_h)
 
     # 3. Empirical update from this seed's observations
     pred = empirical_model(round_id, seed_index, map_w, map_h, prior=prior)
