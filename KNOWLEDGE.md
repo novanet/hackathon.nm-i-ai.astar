@@ -398,4 +398,15 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - NORMAL mode, 5 seeds
 - 50/50 queries used
 - Submitted with V7 triple-blend + settlement stats bug fix
-- Score: pending (round closes ~20:47 UTC)
+- **Score: 90.59 (weighted 140.5, NEW #1 LEADERBOARD!)** — seeds pending
+- Bug fix was worth ~17 pts on this round (R9 with old V6+bug = would have been ~73)
+- R9 appears to be a "NORMAL" round with high predictability (raw 90.59 is our best ever)
+- Ground truth downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R9)
+- [R1-R9] HISTORICAL_TRANSITIONS updated from all 9 rounds (72K cells, 45 seeds)
+- [R1-R9] **LORO avg: 82.32** (was 79.67 with R1-R8 — **+2.65 from adding R9 data!**)
+  - Per-round: R1=84.0, R2=87.6, R3=82.9, R4=90.2, R5=81.9, R6=78.4, R7=68.1, R8=78.5, R9=89.2
+  - R1 LORO: 77.5→84.0 (+6.5), R4: 87.3→90.2 (+2.9), R8: 75.7→78.5 (+2.8)
+- [R1-R9] In-sample: R1=87.2, R2=91.0, R3=91.6, R4=93.0, R5=86.4, R6=88.7, R7=75.3, R8=95.3, R9=93.2
+- [R1-R9] MLP trained to val_kl=0.0474 (was 0.0510 with R1-R8)

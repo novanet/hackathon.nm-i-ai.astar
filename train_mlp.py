@@ -33,6 +33,7 @@ ROUND_IDS = {
     6: "ae78003a-4efe-425a-881a-d16a39bca0ad",
     7: "36e581f1-73f8-453f-ab98-cbe3052b701b",
     8: "c5cdf100-a876-4fb7-b5d8-757162c97989",
+    9: "2a341ace-0f57-4309-9b89-e59fe0f09179",
 }
 
 ENTROPY_WEIGHT_POWER = 0.25
