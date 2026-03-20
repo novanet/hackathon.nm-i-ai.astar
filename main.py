@@ -10,7 +10,7 @@ import time
 
 from fastapi import FastAPI
 
-from astar.client import get_round_detail, simulate_grid, submit
+from astar.client import get_round_detail, get_budget, simulate_grid, submit
 from astar.model import build_prediction, prediction_to_list
 
 log = logging.getLogger(__name__)
@@ -46,14 +46,27 @@ async def solve(request: dict):
     map_w = detail.get("map_width", 40)
     map_h = detail.get("map_height", 40)
 
-    # Phase 1: Run 9-viewport grid coverage for each seed (45 queries total)
-    log.info("Querying %d seeds with grid coverage", n_seeds)
-    for seed_idx in range(n_seeds):
-        try:
-            simulate_grid(round_id, seed_idx, map_w, map_h, delay=0.1)
-            log.info("Seed %d: observations collected", seed_idx)
-        except Exception:
-            log.exception("Failed to query seed %d", seed_idx)
+    # Phase 1: Query simulator if budget allows (9 queries/seed × 5 seeds = 45)
+    queries_needed = n_seeds * 9
+    try:
+        budget = get_budget()
+        remaining = budget["queries_max"] - budget["queries_used"]
+        log.info("Budget: %d/%d used, %d remaining, need %d",
+                 budget["queries_used"], budget["queries_max"], remaining, queries_needed)
+    except Exception:
+        log.exception("Failed to check budget")
+        remaining = 0
+
+    if remaining >= queries_needed:
+        log.info("Querying %d seeds with grid coverage", n_seeds)
+        for seed_idx in range(n_seeds):
+            try:
+                simulate_grid(round_id, seed_idx, map_w, map_h, delay=0.1)
+                log.info("Seed %d: observations collected", seed_idx)
+            except Exception:
+                log.exception("Failed to query seed %d", seed_idx)
+    else:
+        log.info("Skipping queries — only %d remaining (need %d)", remaining, queries_needed)
 
     # Phase 2: Build predictions and submit
     results = {}
