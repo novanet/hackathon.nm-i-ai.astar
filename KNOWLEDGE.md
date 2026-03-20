@@ -194,3 +194,13 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R6] **Adaptive model deployed**: `build_prediction()` now auto-detects round activity from calibrated transitions. Activity threshold 0.10: high-activity → proximity-conditioned + per-class alpha; normal → alpha=0.85 spatial dominant.
 - [R6] **Vectorized proximity computation**: O(H×W) Python loop replaced with numpy broadcasting — 17s→1.5s per seed. All 5 seeds in <8s.
 - [R6] **Cloud Run deployment ready**: Code pushed, Dockerfile includes spatial_model.pkl. Deploy with `gcloud run deploy astar-solver --source . --region europe-north1 --allow-unauthenticated --memory 1Gi --timeout 300 --set-env-vars ASTAR_TOKEN=<token>`
+- [R6] **Settlement stats integration**: Added `_extract_settlement_stats()` to compute mean_pop, mean_food, mean_wealth, mean_defense from observed settlements. Used as secondary signal in activity detection (25% weight). R6 stats: pop=1.24, food=0.58, defence=0.47 (vs R5 calm baseline: pop=1.06, food=0.71, def=0.31). Adaptive food-based alpha: when food<0.5, settlement alpha drops to 0.05 (starving settlements are more volatile). No regression on R1-R5 backtests.
+- **Score: 77.9 (rank 32/186), weighted 104.4** — seeds: 78.1, 78.3, 75.9, 79.2, 78.0
+- [R6] Ground truth downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R6)
+- [R1-R6] HISTORICAL_TRANSITIONS updated from all 6 rounds (48K cells, 30 seeds)
+- [R1-R6] Transition matrix: Empty→Empty 83.8%, Set→Set 30.5%, For→For 75.3%, Port→Port 19.7%
+- [R1-R6] Spatial model retrained with 22 features on 48K samples, saved to data/spatial_model.pkl
+- [R1-R6] Training set (in-sample) backtests: R1=83.9, R2=84.4, R3=53.1, R4=91.6, R5=82.2, R6=80.3
+- [R1-R6] Deployed as Cloud Run revision astar-solver-00005-ksw

@@ -28,6 +28,7 @@ ROUND_IDS = {
     3: "f1dac9a9-5cf1-49a9-8f17-d6cb5d5ba5cb",
     4: "8e839974-b13b-407b-a5e7-fc749d877195",
     5: "fd3c92ff-3178-4dc9-8d9b-acf389b3982b",
+    6: "ae78003a-4efe-425a-881a-d16a39bca0ad",
 }
 
 

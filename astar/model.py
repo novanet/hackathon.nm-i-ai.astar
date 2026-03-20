@@ -22,15 +22,15 @@ PROB_FLOOR = 0.001
 
 # Historical transition matrix derived from Rounds 1+2 backtesting.
 # Used as fallback when no observations are available for the current round.
-# Rows = initial class, Cols = final class.
+# Rows = initial class, Cols = final class.  (calibrated on R1-R6)
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 HISTORICAL_TRANSITIONS = np.array([
-    [0.8648, 0.0921, 0.0074, 0.0088, 0.0270, 0.0000],  # Empty →
-    [0.4699, 0.2822, 0.0042, 0.0236, 0.2202, 0.0000],  # Settlement →
-    [0.4828, 0.0805, 0.1843, 0.0223, 0.2301, 0.0000],  # Port →
-    [0.5000, 0.0000, 0.0000, 0.5000, 0.0000, 0.0000],  # Ruin → (no training data, keep prior)
-    [0.0707, 0.1158, 0.0086, 0.0109, 0.7940, 0.0000],  # Forest →
-    [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
+    [0.837850, 0.110618, 0.008654, 0.011734, 0.031144, 0.0000],  # Empty →
+    [0.453814, 0.305117, 0.003528, 0.026852, 0.210689, 0.0000],  # Settlement →
+    [0.467264, 0.091321, 0.196509, 0.024057, 0.220849, 0.0000],  # Port →
+    [0.5000,   0.0000,   0.0000,   0.5000,   0.0000,   0.0000],  # Ruin → (no data)
+    [0.084066, 0.138564, 0.009686, 0.014733, 0.752951, 0.0000],  # Forest →
+    [0.0000,   0.0000,   0.0000,   0.0000,   0.0000,   1.0000],  # Mountain →
 ])
 
 
