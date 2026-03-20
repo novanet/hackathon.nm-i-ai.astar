@@ -105,6 +105,7 @@ def submit(round_id: str, seed_index: int, prediction: list) -> dict:
     """
     Submit prediction for one seed. Overwrites any previous submission.
     prediction: H×W×6 nested list of probabilities.
+    Saves both the API response and the prediction tensor to disk.
     """
     body = {
         "round_id": round_id,
@@ -112,11 +113,15 @@ def submit(round_id: str, seed_index: int, prediction: list) -> dict:
         "prediction": prediction,
     }
     data = _request("POST", "/submit", body)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     _log_response(round_id, f"submit_s{seed_index}", {
         "seed_index": seed_index,
         "response": data,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
+    # Save the actual prediction tensor for replay
+    pred_path = _round_dir(round_id) / f"prediction_s{seed_index}_{ts}.json"
+    pred_path.write_text(json.dumps({"seed_index": seed_index, "prediction": prediction}), encoding="utf-8")
     return data
 
 
@@ -140,6 +145,26 @@ def get_analysis(round_id: str, seed_index: int) -> dict:
 def get_leaderboard() -> list[dict]:
     """Public leaderboard."""
     return _request("GET", "/leaderboard")
+
+
+def save_round_summary(round_id: str) -> dict:
+    """
+    Save a round summary with scores, budget, and leaderboard snapshot.
+    Call after a round completes to persist all metadata locally.
+    """
+    my_rounds = _request("GET", "/my-rounds")
+    this_round = next((r for r in my_rounds if r.get("round_id") == round_id), None)
+    lb = _request("GET", "/leaderboard")
+
+    summary = {
+        "round_id": round_id,
+        "round_info": this_round,
+        "leaderboard_top10": lb[:10],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    path = _round_dir(round_id) / "round_summary.json"
+    path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return summary
 
 
 def simulate_grid(round_id: str, seed_index: int, map_w: int = 40, map_h: int = 40,
