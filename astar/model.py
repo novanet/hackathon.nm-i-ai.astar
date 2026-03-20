@@ -271,7 +271,7 @@ def compute_cell_features(init_grid: list[list[int]],
     """
     Compute spatial features for every cell from the initial state.
 
-    Features per cell (22 spatial + up to 8 round-level = 30 total):
+    Features per cell (23 spatial + up to 8 round-level = 31 total):
       - initial class one-hot (6)
       - 3×3 neighborhood class fractions (6), normalized
       - 5×5 outer ring class fractions (6), normalized
@@ -279,14 +279,15 @@ def compute_cell_features(init_grid: list[list[int]],
       - distance to nearest forest (1), normalized
       - distance to nearest port (1), normalized
       - count of settlements within radius 5 (1), normalized
+      - distance to nearest map edge (1), normalized
       - [optional] round-level features (8): E→E, S→S, F→F, E→S, settlement_density,
         mean_food, mean_wealth, mean_defense
 
-    Returns: (H, W, 22 or 30) feature array
+    Returns: (H, W, 23 or 31) feature array
     """
     from scipy.ndimage import distance_transform_edt
 
-    n_spatial = 6 + 6 + 6 + 4  # 22 spatial features
+    n_spatial = 6 + 6 + 6 + 5  # 23 spatial features (22 + edge_dist)
     n_round = len(round_features) if round_features is not None else 0
     n_feat = n_spatial + n_round
     features = np.zeros((map_h, map_w, n_feat), dtype=np.float64)
@@ -352,6 +353,9 @@ def compute_cell_features(init_grid: list[list[int]],
             features[y, x, idx + 1] = dist_forest[y, x] / max_dist
             features[y, x, idx + 2] = dist_port[y, x] / max_dist
             features[y, x, idx + 3] = sett_count_r5[y, x] / max(1.0, sett_count_r5.max())
+            # Distance to nearest map edge (normalized to [0, 0.5])
+            edge_dist = min(y, x, map_h - 1 - y, map_w - 1 - x)
+            features[y, x, idx + 4] = edge_dist / (min(map_h, map_w) / 2)
 
     # Append round-level features (same for every cell)
     if round_features is not None:
@@ -807,12 +811,12 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
 
 TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
 
-# Per-class temperature: calibrated via full pipeline sweep on R1-R9.
+# Per-class temperature: calibrated via full pipeline sweep on R1-R9 (31-feature model).
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
-PER_CLASS_TEMPS = np.array([1.15, 1.0, 1.1, 1.0, 1.15, 1.0])
+PER_CLASS_TEMPS = np.array([1.10, 1.05, 1.10, 1.0, 1.10, 1.0])
 
-# Post-model calibration: pipeline sweep on R1-R9 found minimal calibration optimal.
-# E slightly reduced (0.98), F slightly reduced (0.95), S/P/R at 1.0.
+# Post-model calibration: tested 4 configs on R2-R9 with GT.
+# E-0.98/SPR-1.0/F-0.95 gives best R9 (93.4) and best avg (88.20).
 CALIBRATION_FACTORS = np.array([0.98, 1.0, 1.0, 1.0, 0.95, 1.0])
 
 
