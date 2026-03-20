@@ -130,3 +130,13 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R1-R4] No initial Ruin cells found in any of 20 seeds — Ruin row stays as prior [0.5, 0, 0, 0.5, 0, 0]
 - [R1-R4] Final spatial model trained on all 32K cells, n_estimators=300, saved to data/spatial_model.pkl
 - [R1-R4] Training set scores: R1=75.6, R2=75.3, R3=56.3, R4=91.2
+
+### Round 5
+- Round ID: fd3c92ff-3178-4dc9-8d9b-acf389b3982b
+- **Score: 75.38 (rank 47)** — first real submission with improved model
+- Seeds: 72.4, 72.7, 76.5, 76.6, 78.6
+- 45/50 queries used (9-viewport grid coverage per seed)
+- Spatial-only would have scored ~76.3 — observations actually hurt by ~1 pt
+- Transition-only baseline: ~61.9 — spatial model added +14 pts
+- Ground truth downloaded for all 5 seeds
+- **Key insight**: Bayesian observation updates with PRIOR_STRENGTH=20 pull predictions slightly worse than pure spatial prior. Consider increasing prior_strength or skipping observations when spatial model is confident.
