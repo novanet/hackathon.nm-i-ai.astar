@@ -25,11 +25,11 @@ PROB_FLOOR = 0.001
 # Rows = initial class, Cols = final class.
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 HISTORICAL_TRANSITIONS = np.array([
-    [0.8674, 0.0902, 0.0074, 0.0083, 0.0267, 0.0000],  # Empty →
-    [0.4794, 0.2700, 0.0042, 0.0227, 0.2237, 0.0000],  # Settlement →
-    [0.4911, 0.0757, 0.1821, 0.0214, 0.2296, 0.0000],  # Port →
+    [0.8648, 0.0921, 0.0074, 0.0088, 0.0270, 0.0000],  # Empty →
+    [0.4699, 0.2822, 0.0042, 0.0236, 0.2202, 0.0000],  # Settlement →
+    [0.4828, 0.0805, 0.1843, 0.0223, 0.2301, 0.0000],  # Port →
     [0.5000, 0.0000, 0.0000, 0.5000, 0.0000, 0.0000],  # Ruin → (no training data, keep prior)
-    [0.0694, 0.1116, 0.0084, 0.0102, 0.8005, 0.0000],  # Forest →
+    [0.0707, 0.1158, 0.0086, 0.0109, 0.7940, 0.0000],  # Forest →
     [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
 ])
 
@@ -248,19 +248,44 @@ def compute_cell_features(init_grid: list[list[int]],
     """
     Compute spatial features for every cell from the initial state.
 
-    Features per cell (18 total):
+    Features per cell (22 total):
       - initial class one-hot (6)
-      - 3×3 neighborhood class counts (6), normalized
-      - 5×5 neighborhood class counts (6), normalized (captures wider context)
+      - 3×3 neighborhood class fractions (6), normalized
+      - 5×5 outer ring class fractions (6), normalized
+      - distance to nearest settlement (1), normalized by map size
+      - distance to nearest forest (1), normalized
+      - distance to nearest port (1), normalized
+      - count of settlements within radius 5 (1), normalized
 
-    Returns: (H, W, 18) feature array
+    Returns: (H, W, 22) feature array
     """
-    n_feat = 6 + 6 + 6  # one-hot + 3x3 counts + 5x5 counts
+    from scipy.ndimage import distance_transform_edt
+
+    n_feat = 6 + 6 + 6 + 4
     features = np.zeros((map_h, map_w, n_feat), dtype=np.float64)
 
     # Convert grid to class indices
     cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
                           for x in range(map_w)] for y in range(map_h)])
+
+    # Precompute distance transforms for key classes
+    max_dist = float(map_w + map_h)  # normalization constant
+    settlement_mask = (cls_grid == 1) | (cls_grid == 2)  # settlements + ports
+    forest_mask = cls_grid == 4
+    port_mask = cls_grid == 2
+
+    dist_settlement = distance_transform_edt(~settlement_mask) if settlement_mask.any() else np.full((map_h, map_w), max_dist)
+    dist_forest = distance_transform_edt(~forest_mask) if forest_mask.any() else np.full((map_h, map_w), max_dist)
+    dist_port = distance_transform_edt(~port_mask) if port_mask.any() else np.full((map_h, map_w), max_dist)
+
+    # Count settlements within radius 5
+    sett_count_r5 = np.zeros((map_h, map_w), dtype=np.float64)
+    sett_positions = np.argwhere(settlement_mask)
+    for y in range(map_h):
+        for x in range(map_w):
+            for sy, sx in sett_positions:
+                if abs(sy - y) <= 5 and abs(sx - x) <= 5:
+                    sett_count_r5[y, x] += 1.0
 
     for y in range(map_h):
         for x in range(map_w):
@@ -277,23 +302,29 @@ def compute_cell_features(init_grid: list[list[int]],
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < map_h and 0 <= nx < map_w:
                         features[y, x, idx + cls_grid[ny, nx]] += 1.0
-            # Normalize by number of valid neighbors
             n3 = features[y, x, idx:idx+6].sum()
             if n3 > 0:
                 features[y, x, idx:idx+6] /= n3
             idx += 6
 
-            # 5×5 neighborhood counts (excluding 3×3 inner ring and self)
+            # 5×5 outer ring counts (excluding 3×3 inner)
             for dy in range(-2, 3):
                 for dx in range(-2, 3):
                     if abs(dy) <= 1 and abs(dx) <= 1:
-                        continue  # skip inner 3×3
+                        continue
                     ny, nx = y + dy, x + dx
                     if 0 <= ny < map_h and 0 <= nx < map_w:
                         features[y, x, idx + cls_grid[ny, nx]] += 1.0
             n5 = features[y, x, idx:idx+6].sum()
             if n5 > 0:
                 features[y, x, idx:idx+6] /= n5
+            idx += 6
+
+            # Distance features (normalized to [0, 1])
+            features[y, x, idx] = dist_settlement[y, x] / max_dist
+            features[y, x, idx + 1] = dist_forest[y, x] / max_dist
+            features[y, x, idx + 2] = dist_port[y, x] / max_dist
+            features[y, x, idx + 3] = sett_count_r5[y, x] / max(1.0, sett_count_r5.max())
 
     return features
 
@@ -338,38 +369,92 @@ def spatial_prior(round_detail: dict, seed_index: int,
     return pred
 
 
+def observation_calibrated_transitions(round_id: str, round_detail: dict,
+                                       map_w: int = 40, map_h: int = 40,
+                                       smoothing: float = 5.0) -> np.ndarray | None:
+    """
+    Learn round-specific transition matrix from ALL observations across all seeds.
+    Blends with historical transitions using Bayesian smoothing.
+
+    Returns: (NUM_CLASSES, NUM_CLASSES) calibrated transition matrix, or None if no obs.
+    """
+    n_seeds = len(round_detail.get("initial_states", []))
+    states = round_detail["initial_states"]
+
+    # Count transitions from observations
+    obs_counts = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.float64)
+    total_obs = 0
+
+    for seed_idx in range(n_seeds):
+        sims = load_simulations(round_id, seed_idx)
+        if not sims:
+            continue
+        init_grid = states[seed_idx]["grid"]
+        for sim in sims:
+            req = sim["request"]
+            resp = sim["response"]
+            vx, vy = req["viewport_x"], req["viewport_y"]
+            for dy, row in enumerate(resp["grid"]):
+                for dx, terrain_code in enumerate(row):
+                    iy, ix = vy + dy, vx + dx
+                    if iy >= map_h or ix >= map_w:
+                        continue
+                    init_cls = TERRAIN_TO_CLASS.get(init_grid[iy][ix], 0)
+                    final_cls = TERRAIN_TO_CLASS.get(terrain_code, 0)
+                    obs_counts[init_cls, final_cls] += 1
+                    total_obs += 1
+
+    if total_obs == 0:
+        return None
+
+    # Bayesian blend: historical prior (weighted by smoothing) + observations
+    prior_counts = HISTORICAL_TRANSITIONS * smoothing
+    blended = prior_counts + obs_counts
+    row_sums = np.maximum(blended.sum(axis=1, keepdims=True), 1e-10)
+    return blended / row_sums
+
+
 def build_prediction(round_id: str, round_detail: dict, seed_index: int,
                      map_w: int = 40, map_h: int = 40) -> np.ndarray:
     """
     Full prediction pipeline:
-      1. Spatial model prior (if available) OR transition-based prior
-      2. Cross-seed transition prior (refines when observations exist)
-      3. Bayesian update from observations (Dirichlet-Multinomial)
+      1. Spatial model prior (if available) OR historical transition prior
+      2. Round-specific transition calibration from observations (all seeds)
+      3. Blend spatial + calibrated transitions
       4. Floor enforcement
+
+    Key design: observations calibrate the transition matrix (round-level),
+    NOT individual cells. This avoids overconfident single-observation updates
+    that were shown to hurt score in R5 testing.
 
     Returns: (H, W, 6) probability tensor ready for submission.
     """
-    # 1. Best available prior: spatial model > cross-seed transitions > historical transitions
+    # 1. Spatial model prior
     sp = spatial_prior(round_detail, seed_index, map_w, map_h)
 
-    xseed = cross_seed_transition_prior(round_id, round_detail, seed_index, map_w, map_h)
+    # 2. Round-calibrated transitions from observations
+    calibrated_trans = observation_calibrated_transitions(
+        round_id, round_detail, map_w, map_h)
 
-    if sp is not None and xseed is not None:
-        # Blend spatial model with round-specific transitions (70/30 backtested)
-        prior = 0.7 * sp + 0.3 * xseed
-        prior = prior / prior.sum(axis=-1, keepdims=True)
-    elif sp is not None:
-        prior = sp
-    elif xseed is not None:
-        prior = xseed
+    if calibrated_trans is not None:
+        trans_prior = _apply_transition_matrix(
+            round_detail, seed_index, calibrated_trans, map_w, map_h)
     else:
-        prior = _apply_transition_matrix(round_detail, seed_index,
-                                         HISTORICAL_TRANSITIONS, map_w, map_h)
+        trans_prior = _apply_transition_matrix(
+            round_detail, seed_index, HISTORICAL_TRANSITIONS, map_w, map_h)
 
-    # 2. Bayesian update from this seed's observations
-    pred = bayesian_update(round_id, seed_index, map_w, map_h, prior=prior)
+    # 3. Blend spatial model with transition prior
+    if sp is not None:
+        # Spatial model is the dominant predictor. Transitions provide a
+        # safety net for out-of-distribution rounds. Alpha=0.85 backtested
+        # across R1-R5 as near-optimal.
+        alpha = 0.85
+        pred = alpha * sp + (1.0 - alpha) * trans_prior
+        pred = pred / pred.sum(axis=-1, keepdims=True)
+    else:
+        pred = trans_prior
 
-    # 3. Floor enforcement
+    # 4. Floor enforcement
     return apply_floor(pred)
 
 
