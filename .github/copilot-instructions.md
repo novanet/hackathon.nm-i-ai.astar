@@ -41,11 +41,10 @@ Key files:
 
 ## Deployment
 
-Astar Island requires a public HTTPS `/solve` endpoint that competition validators call. We deploy on **Google Cloud Run** using the free GCP account provided by the competition.
+We do **not** expose a `/solve` endpoint — the organizers confirmed this is not required. Instead, we query the simulator and submit predictions directly via the API client. We use **Google Cloud Run** only as a compute environment for running our solver scripts.
 
-- **Skill**: Use the `cloud-run-deploy` skill (`.github/skills/cloud-run-deploy/`) for setup, deployment, and troubleshooting
-- **Region**: Always `europe-north1` (same as validators)
-- **Endpoint template**: `.github/skills/cloud-run-deploy/assets/main.py`
+- **Skill**: Use the `cloud-run-deploy` skill (`.github/skills/cloud-run-deploy/`) for setup and troubleshooting
+- **Region**: Always `europe-north1` (closest to API servers)
 - **GCP docs**: https://app.ainm.no/docs/google-cloud/setup
 
 ## Coding Conventions

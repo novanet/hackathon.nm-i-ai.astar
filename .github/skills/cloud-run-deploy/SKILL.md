@@ -1,29 +1,27 @@
 ---
 name: cloud-run-deploy
-description: 'Deploy the Astar Island prediction API to Google Cloud Run. Use when: setting up GCP, creating the /solve endpoint, building Docker images, deploying to Cloud Run, debugging cold starts or deployment issues, updating the live service.'
+description: 'Deploy the Astar Island solver to Google Cloud Run. Use when: setting up GCP, building Docker images, deploying to Cloud Run, debugging deployment issues, updating the live service.'
 argument-hint: 'Describe what you need: initial setup, deploy update, debug logs, etc.'
 ---
 
-# Deploy Astar Island API to Google Cloud Run
+# Deploy Astar Island Solver to Google Cloud Run
 
-Astar Island **requires** a public HTTPS `/solve` endpoint that competition validators call. Google Cloud Run is the recommended hosting option — free with competition GCP accounts.
+We do **not** expose a `/solve` endpoint — the organizers confirmed this is not required. Instead, our solver runs on Cloud Run as a compute environment, querying the simulator and submitting predictions directly via the API client.
 
 ## Architecture
 
 ```
-Validators (app.ainm.no)
-    │
-    ▼  POST /solve  { round_id, ... }
 ┌─────────────────────┐
-│  Cloud Run service   │  ← your FastAPI container
+│  Cloud Run service   │  ← solver container
 │  (europe-north1)     │
 └─────────┬───────────┘
-          │  calls api.ainm.no/astar-island/*
+          │  queries api.ainm.no/astar-island/*
+          │  submits predictions via API
           ▼
     Competition API
 ```
 
-Your Cloud Run service receives solve requests, queries the simulator using your budget, builds predictions with your model, and returns the W×H×6 tensor.
+The solver queries the simulator using the query budget, builds predictions with the trained model, and submits the W×H×6 tensor via the API.
 
 ## GCP Account Setup
 
@@ -46,9 +44,9 @@ Your Cloud Run service receives solve requests, queries the simulator using your
 
 ## Deployment Steps
 
-### 1. Prepare the endpoint
+### 1. Prepare the solver
 
-Use the [FastAPI template](./assets/main.py) as a starting point. The `/solve` endpoint receives round info from validators and must return predictions.
+The solver script queries the simulator and submits predictions via the API client. A health-check endpoint (`/health`) is useful for Cloud Run but no `/solve` endpoint is needed.
 
 ### 2. Create Dockerfile
 
@@ -76,11 +74,12 @@ This builds the Docker image, pushes it, and gives you a URL like:
 https://astar-solver-xxxxx-lz.a.run.app
 ```
 
-### 4. Submit the URL
+### 4. Verify deployment
 
-1. Copy the Cloud Run URL
-2. Go to [app.ainm.no](https://app.ainm.no/) → Astar Island submission page
-3. Paste the URL and submit
+Check the health endpoint:
+```bash
+curl https://astar-solver-xxxxx-lz.a.run.app/health
+```
 
 ### 5. Keep warm (optional but recommended)
 
@@ -108,8 +107,7 @@ gcloud run deploy astar-solver --memory 2Gi --cpu 2 --region europe-north1
 
 ## Key Constraints
 
-- **Region**: Always use `europe-north1` — same as validators, lowest latency
-- **Timeout**: Validators expect response within 60 seconds
+- **Region**: Always use `europe-north1` — closest to API servers, lowest latency
 - **Auth token**: Set `ASTAR_TOKEN` as a Cloud Run environment variable:
   ```bash
   gcloud run deploy astar-solver \
