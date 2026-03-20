@@ -421,8 +421,8 @@ def load_spatial_model():
         if mlp is not None:
             import torch
             class TripleBlendPredictor:
-                """Blends GBM ensemble with KL-loss MLP. LORO optimal: 60% GBM + 40% MLP."""
-                def __init__(self, gbm_model, mlp_model, gbm_weight=0.6):
+                """Blends GBM ensemble with KL-loss MLP. Re-swept for 31-feat model: 50% GBM + 50% MLP."""
+                def __init__(self, gbm_model, mlp_model, gbm_weight=0.5):
                     self.gbm = gbm_model
                     self.mlp = mlp_model
                     self.gbm_weight = gbm_weight
@@ -437,7 +437,7 @@ def load_spatial_model():
                         mlp_pred = torch.exp(log_pred).cpu().numpy()
                     return self.gbm_weight * gbm_pred + (1 - self.gbm_weight) * mlp_pred
             _spatial_model = TripleBlendPredictor(gbm, mlp)
-            print(f"  [model] Loaded triple-blend: 60% GBM + 40% MLP")
+            print(f"  [model] Loaded triple-blend: 50% GBM + 50% MLP")
         else:
             _spatial_model = gbm
             print(f"  [model] Loaded GBM ensemble (no MLP found)")
@@ -815,9 +815,9 @@ TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 PER_CLASS_TEMPS = np.array([1.10, 1.05, 1.10, 1.0, 1.10, 1.0])
 
-# Post-model calibration: tested 4 configs on R2-R9 with GT.
-# E-0.98/SPR-1.0/F-0.95 gives best R9 (93.4) and best avg (88.20).
-CALIBRATION_FACTORS = np.array([0.98, 1.0, 1.0, 1.0, 0.95, 1.0])
+# Post-model calibration: swept for 50/50 blend on R2-R9 with GT.
+# E-1.0/F-0.95 gives best avg (88.29). Empty bias corrected by blend ratio change.
+CALIBRATION_FACTORS = np.array([1.0, 1.0, 1.0, 1.0, 0.95, 1.0])
 
 
 def temperature_scale(pred: np.ndarray, T: float | None = None) -> np.ndarray:
