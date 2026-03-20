@@ -410,3 +410,21 @@ Critical learnings accumulated during the competition. Copilot should append fin
   - R1 LORO: 77.5→84.0 (+6.5), R4: 87.3→90.2 (+2.9), R8: 75.7→78.5 (+2.8)
 - [R1-R9] In-sample: R1=87.2, R2=91.0, R3=91.6, R4=93.0, R5=86.4, R6=88.7, R7=75.3, R8=95.3, R9=93.2
 - [R1-R9] MLP trained to val_kl=0.0474 (was 0.0510 with R1-R8)
+
+### Model V8: Edge Distance Feature + Re-tuned Calibration (post-R9)
+- **New feature**: `edge_dist = min(y, x, map_h-1-y, map_w-1-x) / (min(map_h, map_w) / 2)` — normalized distance to nearest map edge. Cells at edge behave differently (less expansion, fewer neighbors).
+- **Feature count**: 23 spatial + 8 round = **31 features** (was 30)
+- **GBM LORO**: 82.78 (was 82.32 — **+0.46**)
+- **MLP val_kl**: 0.0347 (was 0.0474 — **much better**)
+- **Feature ablation results**:
+  - edge_dist alone: +0.57 LORO — clear winner
+  - mountain_dist alone: -0.01 LORO — useless, rejected
+  - Both together: +0.22 — mountain_dist dilutes edge_dist
+  - Bigger model (800 trees, depth 5): -0.68 — overfits, rejected
+- **Re-tuned post-processing**: New temps [E=1.10, S=1.05, P=1.10, R=1.0, F=1.10, M=1.0]. Calibration [E=0.98, S=1.0, P=1.0, R=1.0, F=0.95, M=1.0] best for R9+ (tested 4 configs).
+- **Key insight**: Greedy parameter sweeps (optimize one param at a time) can find suboptimal configs. Direct comparison of full config combos is more reliable for final tuning.
+- **Key insight**: Re-sweep calibration/temps after every model change. Old optimal [E=0.98, F=0.95] was still best for the new 31-feature model, not the sweep-found [E=1.07, SPR=0.92].
+- **Backtest**: R9=93.44 raw (weighted 145.0). Was 90.59 submitted (weighted 140.5). **+4.5 weighted pts improvement.**
+- **Full backtest**: R1=83.9, R2=90.2, R3=45.0, R4=88.7, R5=87.3, R6=89.4, R7=73.7, R8=95.2, R9=93.4. Avg=83.0.
+- **Gap to leader**: Leader=146.3 (raw ~94.3). Our R9 backtest=93.4 (weighted 145.0). Gap = 1.3 weighted, 0.9 raw.
+- R10 weight = 1.05^10 = 1.629. If we score 93+ raw on R10, weighted = 151+ → new leader.
