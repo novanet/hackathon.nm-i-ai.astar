@@ -414,28 +414,89 @@ def observation_calibrated_transitions(round_id: str, round_detail: dict,
     return blended / row_sums
 
 
-def _detect_round_activity(calibrated_trans: np.ndarray | None) -> float:
+def _extract_settlement_stats(round_id: str, round_detail: dict) -> dict:
+    """
+    Extract aggregate settlement statistics from all simulation observations.
+    Returns dict with: mean_pop, mean_food, mean_wealth, mean_defense,
+    n_alive, n_dead, n_ports, n_factions, settlement_density.
+    These are signals for hidden parameters (expansion, winter, raiding, trade).
+    """
+    n_seeds = len(round_detail.get("initial_states", []))
+    all_pop, all_food, all_wealth, all_defense = [], [], [], []
+    factions: set[int] = set()
+    n_alive = n_dead = n_ports = 0
+
+    for seed_idx in range(n_seeds):
+        sims = load_simulations(round_id, seed_idx)
+        for sim in sims:
+            resp = sim.get("response", sim)
+            for s in resp.get("settlements", []):
+                if s.get("alive", True):
+                    all_pop.append(s.get("population", 0))
+                    all_food.append(s.get("food", 0))
+                    all_wealth.append(s.get("wealth", 0))
+                    all_defense.append(s.get("defense", 0))
+                    factions.add(s.get("owner_id", 0))
+                    n_alive += 1
+                    if s.get("has_port"):
+                        n_ports += 1
+                else:
+                    n_dead += 1
+
+    if not all_pop:
+        return {}
+
+    # Settlement density: alive settlements per observation viewport
+    total_viewports = sum(len(load_simulations(round_id, s)) for s in range(n_seeds))
+    density = n_alive / max(total_viewports, 1)
+
+    return {
+        "mean_pop": float(np.mean(all_pop)),
+        "mean_food": float(np.mean(all_food)),
+        "mean_wealth": float(np.mean(all_wealth)),
+        "mean_defense": float(np.mean(all_defense)),
+        "n_alive": n_alive,
+        "n_dead": n_dead,
+        "n_ports": n_ports,
+        "n_factions": len(factions),
+        "density": density,
+    }
+
+
+def _detect_round_activity(calibrated_trans: np.ndarray | None,
+                           settlement_stats: dict | None = None) -> float:
     """
     Detect how "active" a round is compared to historical averages.
+    Uses two complementary signals:
+      1. Transition matrix divergence (primary, when available)
+      2. Settlement stats (secondary, catches dynamics even with few observations)
     Returns a divergence score: 0 = matches historical, higher = more different.
-    Used to decide whether to trust the spatial model (trained on historical data)
-    or lean more on round-specific calibrated transitions.
     """
-    if calibrated_trans is None:
-        return 0.0
+    trans_activity = 0.0
+    if calibrated_trans is not None:
+        ee_hist = HISTORICAL_TRANSITIONS[0, 0]  # ~0.865
+        ff_hist = HISTORICAL_TRANSITIONS[4, 4]  # ~0.794
+        ee_obs = calibrated_trans[0, 0]
+        ff_obs = calibrated_trans[4, 4]
+        ee_div = max(0, ee_hist - ee_obs) / ee_hist
+        ff_div = max(0, ff_hist - ff_obs) / ff_hist
+        trans_activity = (ee_div + ff_div) / 2.0
 
-    # Compare key transition rates to historical
-    # Empty→Empty and Forest→Forest are the most informative
-    ee_hist = HISTORICAL_TRANSITIONS[0, 0]  # ~0.865
-    ff_hist = HISTORICAL_TRANSITIONS[4, 4]  # ~0.794
-    ee_obs = calibrated_trans[0, 0]
-    ff_obs = calibrated_trans[4, 4]
+    # Settlement stats provide a secondary signal:
+    # High pop + low food + high defense = aggressive expansion + conflict
+    # Baseline from R5 (calm round): pop~1.06, food~0.71, def~0.31
+    stats_activity = 0.0
+    if settlement_stats and settlement_stats.get("mean_pop", 0) > 0:
+        pop_signal = max(0, settlement_stats["mean_pop"] - 1.06) / 1.06
+        food_signal = max(0, 0.71 - settlement_stats["mean_food"]) / 0.71
+        def_signal = max(0, settlement_stats["mean_defense"] - 0.31) / 0.31
+        stats_activity = (pop_signal + food_signal + def_signal) / 3.0
 
-    # Divergence: how much lower are the stability rates?
-    # Lower = more active round (more expansion/colonization)
-    ee_div = max(0, ee_hist - ee_obs) / ee_hist
-    ff_div = max(0, ff_hist - ff_obs) / ff_hist
-    return (ee_div + ff_div) / 2.0
+    # Combine: transition matrix is primary when available, stats are secondary
+    if calibrated_trans is not None:
+        return 0.75 * trans_activity + 0.25 * stats_activity
+    else:
+        return stats_activity
 
 
 def _proximity_conditioned_transitions(round_id: str, round_detail: dict,
@@ -559,13 +620,25 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
     calibrated_trans = observation_calibrated_transitions(
         round_id, round_detail, map_w, map_h)
 
-    # 3. Detect round activity
-    activity = _detect_round_activity(calibrated_trans)
+    # 2b. Extract settlement stats for hidden parameter estimation
+    sett_stats = _extract_settlement_stats(round_id, round_detail)
+
+    # 3. Detect round activity (using both transition matrix and settlement stats)
+    activity = _detect_round_activity(calibrated_trans, sett_stats)
 
     if activity >= 0.10 and calibrated_trans is not None:
         # HIGH-ACTIVITY ROUND: use proximity-conditioned transitions + per-class alpha
         # R6 showed that spatial model trained on calmer rounds underestimates expansion.
-        CLASS_ALPHAS = {0: 0.3, 1: 0.1, 2: 0.0, 3: 0.0, 4: 0.1, 5: 0.0}
+
+        # Adaptive alphas based on settlement stats:
+        # Low food → settlements are collapsing → trust transitions more (lower alpha)
+        # High defense → active raids → trust transitions more for settlements
+        base_alphas = {0: 0.3, 1: 0.1, 2: 0.0, 3: 0.0, 4: 0.1, 5: 0.0}
+        if sett_stats and sett_stats.get("mean_food", 0.7) < 0.5:
+            # Very low food: settlements are starving, transitions dominate
+            base_alphas[1] = 0.05  # Less spatial trust for settlements
+            base_alphas[2] = 0.0   # Ports also fragile
+        CLASS_ALPHAS = base_alphas
         OBS_WEIGHT = 0.10
 
         prox = _proximity_conditioned_transitions(
