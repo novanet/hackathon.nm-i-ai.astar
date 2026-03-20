@@ -47,6 +47,14 @@ Critical learnings accumulated during the competition. Copilot should append fin
   ```
 - [Backtest] Key differences R1 vs R2: R1 empty stayed 82% vs R2 77%; R1 forest stayed 75% vs R2 67%; Port much more volatile in R1 (32% stay vs 58%)
 - [Backtest] Historical averaged transition matrix stored in model.py as HISTORICAL_TRANSITIONS
+- [R1-R4] Updated all-rounds transition matrix (20 seeds, 32K cells):
+  ```
+  Empty→Empty:       86.7%    Empty→Settlement:  9.0%    Empty→Forest:  2.7%   Empty→Port: 0.7%  Empty→Ruin: 0.8%
+  Settlement→Empty:  47.9%    Settlement→Sett:  27.0%    Settlement→Forest: 22.4%   Settlement→Ruin: 2.3%
+  Port→Empty:        49.1%    Port→Sett:         7.6%    Port→Port: 18.2%   Port→Forest: 23.0%  Port→Ruin: 2.1%
+  Forest→Forest:     80.1%    Forest→Settlement: 11.2%   Forest→Empty:  6.9%
+  Mountain→Mountain: 100%     (No initial Ruins in any round)
+  ```
 
 ## Query Strategy Insights
 
@@ -98,4 +106,27 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - Model: initial prior → cross-seed transitions (60/40 blend) → empirical update → spatial smooth (σ=1.5) → neighbor inference → floor(0.01)
 - **Post-round model update**: Changed to pure transition model (alpha=1.0), floor=0.001, historical fallback transitions. These changes would have improved score if applied before submission.
 - Map: 40x40, 5 seeds, ~33-56 initial settlements per seed
-- Score: (awaiting — round closes 23:47 UTC)
+- Score: **3.02** (rank 141) — catastrophically low due to naive empirical_model bug (fixed post-round with Bayesian updates)
+
+### Round 3
+- Round ID: f1dac9a9-5cf1-49a9-8f17-d6cb5d5ba5cb
+- Missed — no submission
+- Ground truth downloaded for all 5 seeds
+- R3 scores much lower across all models (~42-58 range) — suggests very different hidden parameters
+
+### Round 4
+- Round ID: 8e839974-b13b-407b-a5e7-fc749d877195
+- Missed — no submission
+- Ground truth downloaded for all 5 seeds
+- R4 scores very high (~89-91) — suggests a more predictable/stable round
+
+### Multi-Round Retraining (R1-R4)
+- [R1-R4] LORO cross-validation: spatial=66.52, baseline=69.94, Δ=-3.43 — spatial model doesn't generalize well across rounds
+- [R1-R4] Per-round LORO: R1=69.3(s) vs 74.4(b), R2=63.4(s) vs 79.7(b), R3=43.7(s) vs 42.3(b), R4=89.7(s) vs 83.3(b)
+- [R1-R4] Spatial model beats baseline only on R3 (+1.4) and R4 (+6.4); loses badly on R2 (-16.4)
+- [R1-R4] Hidden parameters vary dramatically between rounds — R3 is very different, R4 is very predictable
+- [R1-R4] Updated HISTORICAL_TRANSITIONS from all 4 rounds (32K cells, 20 seeds)
+- [R1-R4] Updated transition matrix: Empty stays 86.7%, Settlement stays 27.0% (down from old 39.6%), Forest stays 80.1% (up from 70.5%), Port stays 18.2% (down from 45.1%)
+- [R1-R4] No initial Ruin cells found in any of 20 seeds — Ruin row stays as prior [0.5, 0, 0, 0.5, 0, 0]
+- [R1-R4] Final spatial model trained on all 32K cells, n_estimators=300, saved to data/spatial_model.pkl
+- [R1-R4] Training set scores: R1=75.6, R2=75.3, R3=56.3, R4=91.2
