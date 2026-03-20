@@ -356,3 +356,46 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Key insight**: Entropy weighting is purely a **training-time** technique — it changes model weights, not inference behavior. No need to detect or classify cells at inference time. The model naturally produces better predictions for high-entropy cells because it was optimized for them.
 - **Key insight**: The calibration bias is a property of the model architecture (LightGBM with regularization pushes predictions toward minority classes), not the data. It persists across all rounds and all training sets. Safe to apply uniformly at inference.
 - **Key insight**: Calibration and entropy weighting are **synergistic** (+0.88 combined vs +0.64 + +0.07 individually). Entropy weighting makes the model better at predicting boundary cells, then calibration corrects the remaining systematic class-level bias.
+
+### Model V6: LGB+XGB Ensemble (post-R8)
+- **Change**: Added XGBoost as second GBM with 70/30 LGB/XGB blend. Same hyperparameters (depth=4, lr=0.05, subsample=0.7, etc.).
+- **LORO**: +0.37 vs V5
+
+### Model V7: Triple-Blend with KL-Loss MLP (post-R9)
+- **Core insight**: GBM models (LGB+XGB) are trained with MSE loss, but scoring uses entropy-weighted KL divergence. Loss function mismatch was the #1 untried improvement.
+- **Change**: Added PyTorch MLP (128→64→6, softmax, BatchNorm, Dropout 0.1) trained with entropy-weighted KL divergence loss. Architecture directly optimizes the competition scoring metric.
+- **Blend**: 60% GBM + 40% MLP (LORO-optimized)
+- **LORO with post-processing**: 82.24 (was 80.66 for GBM-only — **+1.58 improvement**)
+- **Per-round LORO** (60/40 blend vs GBM-only):
+  - R1: 81.4 vs 80.8 (+0.6)
+  - R2: 86.1 vs 86.8 (-0.7) — GBM wins slightly
+  - R3: 83.4 vs 80.5 (+2.9) — MLP helps a lot
+  - R4: 87.4 vs 85.2 (+2.2)
+  - R5: 81.8 vs 81.7 (+0.1)
+  - R6: 82.5 vs 83.3 (-0.8)
+  - R7: 65.4 vs 66.5 (-1.1)
+  - R8: 89.9 vs 80.3 (+9.6) — huge MLP win, likely collapse round where softmax output handles better
+- **Weight sweep**: 0%→100% GBM tested. Sweet spot at 50-60% GBM. Pure MLP=79.69, pure GBM=80.66. 60/40 blend=82.24.
+- **Key insight**: MLP and GBM have truly complementary strengths. GBM better on "normal" rounds (R1,R2,R5,R6), MLP better on unusual/collapse rounds (R3,R4,R8).
+- **Key insight**: KL-loss softmax MLP naturally produces better-calibrated probability distributions. GBM outputs can go negative/above 1, requiring clipping. MLP softmax is always a valid distribution.
+- **Training config**: Adam W (lr=1e-3, weight_decay=1e-4), cosine annealing, batch_size=4096, 200-300 epochs with patience=20 early stopping. 90/10 val split. Grad clip=1.0.
+- **Files**: `train_mlp.py` (training), `data/mlp_model.pt` (weights), `model.py` updated with `TripleBlendPredictor`
+
+### CRITICAL BUG FIX: Settlement Stats Train/Test Mismatch (discovered during R9)
+- **Bug**: `compute_round_features()` overrode food/wealth/defense with real settlement observation stats at inference time, but the model was trained on GT-derived synthetic proxies (food=0.3+0.7×S→S, wealth=E→S×0.3, defense=1.0−S→E). This created a train/test domain shift.
+- **Impact**: Catastrophic on some rounds — R5 went from 19.85 → 84.52 after fix (!), R7 from 44.39 → 67.92, R2 from 81.57 → 89.00
+- **Root cause**: Real settlement food/wealth/defense stats measure actual settlement attributes (e.g., food=0.69), while training proxies measure transition-derived quantities (e.g., food=0.3+0.7×0.32=0.52). Completely different domains despite same feature name.
+- **Fix**: Removed the settlement_stats override in `compute_round_features()`. Always use transition-derived proxies, matching what the model learned.
+- **Full pipeline backtest (in-sample) with fix**: R1=82.8, R2=89.0, R3=41.3, R4=86.3, R5=84.5, R6=86.1, R7=67.9, R8=94.9. Avg=79.1
+- **R8 weighted = 140.2** (in-sample) — matches leader's 140.3!
+- **Key lesson**: When adding new features to the model, the training-time feature computation MUST use the same formula as inference-time. Settlement stats were only available at inference (from observations) but not at training (which used GT transitions), so the override created an undetectable mismatch.
+- ~~[V4] Settlement stat fallback: When no observations, derive proxies from transition matrix~~ Now ALWAYS uses transition-derived proxies, even when settlement stats are available.
+- **R9 resubmitted** with V7 + this fix. Score pending (round closes 20:47 UTC).
+
+### Round 9
+- Round ID: 2a341ace-0f57-4309-9b89-e59fe0f09179
+- Round weight: 1.551 (1.05^9)
+- NORMAL mode, 5 seeds
+- 50/50 queries used
+- Submitted with V7 triple-blend + settlement stats bug fix
+- Score: pending (round closes ~20:47 UTC)

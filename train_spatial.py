@@ -325,6 +325,23 @@ def train_and_evaluate():
         print(f"    [{row}],  # {comment} →")
     print("])")
 
+    # ── Train MLP for triple-blend ──
+    print("\n=== TRAINING MLP (KL-loss, for triple-blend) ===")
+    try:
+        import torch
+        from train_mlp import train_mlp as train_mlp_fn, KLDivMLP
+        mlp = train_mlp_fn(X, Y, W, n_epochs=300, verbose=True)
+        mlp_path = Path("data") / "mlp_model.pt"
+        torch.save({
+            "state_dict": mlp.state_dict(),
+            "n_features": X.shape[1],
+            "n_classes": NUM_CLASSES,
+            "hidden": [128, 64],
+        }, mlp_path)
+        print(f"  MLP saved to {mlp_path}")
+    except Exception as e:
+        print(f"  MLP training skipped: {e}")
+
 
 if __name__ == "__main__":
     train_and_evaluate()

@@ -364,9 +364,28 @@ def compute_cell_features(init_grid: list[list[int]],
 _spatial_model = None  # cached trained model
 
 
+def _load_mlp_model():
+    """Load the trained MLP model from disk, or return None."""
+    import torch
+    mlp_path = Path(__file__).parent.parent / "data" / "mlp_model.pt"
+    if not mlp_path.exists():
+        return None
+    from train_mlp import KLDivMLP
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(mlp_path, map_location=device, weights_only=True)
+    mlp = KLDivMLP(
+        n_features=checkpoint["n_features"],
+        n_classes=checkpoint["n_classes"],
+        hidden=checkpoint["hidden"],
+    ).to(device)
+    mlp.load_state_dict(checkpoint["state_dict"])
+    mlp.eval()
+    return mlp
+
+
 def load_spatial_model():
     """Load the trained spatial model from disk, or return None.
-    Supports both single model and ensemble dict {lgb, xgb, lgb_weight}."""
+    Supports: ensemble dict {lgb, xgb, lgb_weight} + optional MLP blend."""
     global _spatial_model
     if _spatial_model is not None:
         return _spatial_model
@@ -375,8 +394,8 @@ def load_spatial_model():
     if model_path.exists():
         loaded = pickle.loads(model_path.read_bytes())
         if isinstance(loaded, dict) and "lgb" in loaded:
-            # Ensemble format
-            class EnsemblePredictor:
+            # GBM ensemble
+            class GBMPredictor:
                 def __init__(self, lgb_m, xgb_m, w=0.7):
                     self.lgb = lgb_m
                     self.xgb = xgb_m
@@ -387,12 +406,37 @@ def load_spatial_model():
             for m in [loaded["lgb"], loaded["xgb"]]:
                 if hasattr(m, 'n_jobs'):
                     m.n_jobs = 1
-            _spatial_model = EnsemblePredictor(loaded["lgb"], loaded["xgb"], loaded.get("lgb_weight", 0.7))
+            gbm = GBMPredictor(loaded["lgb"], loaded["xgb"], loaded.get("lgb_weight", 0.7))
         else:
-            # Single model (legacy)
             if hasattr(loaded, 'n_jobs'):
                 loaded.n_jobs = 1
-            _spatial_model = loaded
+            gbm = loaded
+
+        # Try to load MLP for triple-blend (60% GBM + 40% MLP)
+        mlp = _load_mlp_model()
+        if mlp is not None:
+            import torch
+            class TripleBlendPredictor:
+                """Blends GBM ensemble with KL-loss MLP. LORO optimal: 60% GBM + 40% MLP."""
+                def __init__(self, gbm_model, mlp_model, gbm_weight=0.6):
+                    self.gbm = gbm_model
+                    self.mlp = mlp_model
+                    self.gbm_weight = gbm_weight
+                    self.n_jobs = 1
+                def predict(self, X):
+                    gbm_pred = self.gbm.predict(X)
+                    # MLP prediction
+                    device = next(self.mlp.parameters()).device
+                    with torch.no_grad():
+                        X_t = torch.tensor(X, dtype=torch.float32, device=device)
+                        log_pred = self.mlp(X_t)
+                        mlp_pred = torch.exp(log_pred).cpu().numpy()
+                    return self.gbm_weight * gbm_pred + (1 - self.gbm_weight) * mlp_pred
+            _spatial_model = TripleBlendPredictor(gbm, mlp)
+            print(f"  [model] Loaded triple-blend: 60% GBM + 40% MLP")
+        else:
+            _spatial_model = gbm
+            print(f"  [model] Loaded GBM ensemble (no MLP found)")
         return _spatial_model
     return None
 
@@ -552,13 +596,12 @@ def compute_round_features(calibrated_trans: np.ndarray | None,
     ss_rate = trans[1, 1]  # S→S
     es_rate = trans[0, 1]  # E→S
     se_rate = trans[1, 0]  # S→E
+    # Always use transition-derived proxies (matching training distribution).
+    # Real settlement stats are in a different domain than the GT-derived proxies
+    # the model was trained on, causing catastrophic mismatch on some rounds.
     mean_food = 0.3 + 0.7 * ss_rate  # food ~ settlement survival
     mean_wealth = es_rate * 0.3       # wealth ~ expansion rate
     mean_defense = 1.0 - se_rate      # defense ~ 1 - collapse rate
-    if settlement_stats:
-        mean_food = settlement_stats.get("mean_food", mean_food)
-        mean_wealth = settlement_stats.get("mean_wealth", mean_wealth)
-        mean_defense = settlement_stats.get("mean_defense", mean_defense)
 
     return np.array([
         trans[0, 0],  # E→E
