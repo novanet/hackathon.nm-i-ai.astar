@@ -233,3 +233,19 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R1-R7] Spatial model retrained with 22 features on 56K samples, saved to data/spatial_model.pkl
 - [R1-R7] Full-pipeline backtests: R1=83.5, R2=84.2, R3=49.0, R4=90.3, R5=83.5, R6=80.1, R7=64.0
 - [R1-R7] R7 improved from 56.9 (official) to 64.0 (retrained backtest) — +7.1 pts from including R7 GT in training
+
+### Model V3: Round-Conditioned Spatial + LightGBM (post-R7)
+- **Architecture**: LightGBM (1000 trees, depth=6, lr=0.05) with 27 features (22 spatial + 5 round-level)
+- **Round features**: E→E, S→S, F→F, E→S transition rates + settlement_density — computed from debiased observations at inference
+- **Observation debiasing**: Shrinkage matrix (GT/obs ratio per transition) applied to observation-calibrated transitions. Main classes ~1.0, Port noisy (0.47-1.46)
+- **Key finding**: Debiased observation features match GT within ±0.021 — debiasing works well
+- **Pure spatial is optimal**: Alpha=1.0 (no transition blending), obs_w=0.0 (no cell-level observation blending). Added blending always hurts.
+- **Backtests**: R1=75.3, R2=91.2, R3=37.0, R4=86.4, R5=89.0, R6=90.5, R7=71.1
+  - vs old: R2+5.5, R5+5.5, R6+10.4, R7+7.1 — massive improvements on observed rounds
+  - R1/R3 regressed (no observations → fallback to historical features) — irrelevant for future rounds
+  - **R6 weighted = 121.3** — beats leader at 118.6!
+- **LORO cross-val**: avg=70.3 (was ~65). Per-round: R2=83.1, R5=82.3, R6=77.3, R7=64.9
+- **Overfitting gap**: ~8 pts between in-sample and LORO, driven by limited round diversity (7 rounds)
+- **Round features have huge variance**: R3 E→E=0.989 (calm) vs R6 E→E=0.702 (chaos) vs R7 E→E=0.852 — this is the killer feature
+- ~~[R6] Alpha is round-dependent~~ → now handled by round-conditioned features in spatial model
+- ~~[R6] Proximity-conditioned transitions~~ → subsumed by spatial model with round features

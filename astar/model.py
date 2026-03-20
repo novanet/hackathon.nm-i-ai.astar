@@ -33,6 +33,25 @@ HISTORICAL_TRANSITIONS = np.array([
     [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
 ])
 
+# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R7.
+# Multiplied with observed transitions to debias toward GT distribution.
+# Values >1 mean GT is higher than single-run observations (more stable).
+SHRINKAGE_MATRIX = np.array([
+    [1.0070, 0.9721, 1.1703, 0.8688, 0.9658, 1.0000],  # Empty →
+    [0.9732, 1.0375, 1.2656, 0.8248, 0.9483, 1.0000],  # Settlement →
+    [1.3613, 0.6782, 0.5610, 0.4733, 1.4578, 1.0000],  # Port →
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Ruin →
+    [1.0299, 0.9721, 1.0162, 0.8690, 1.0039, 1.0000],  # Forest →
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Mountain →
+])
+
+
+def debias_transitions(observed_trans: np.ndarray) -> np.ndarray:
+    """Apply shrinkage to observed transitions to correct for single-run bias."""
+    debiased = observed_trans * SHRINKAGE_MATRIX
+    row_sums = np.maximum(debiased.sum(axis=1, keepdims=True), 1e-10)
+    return debiased / row_sums
+
 
 def initial_prior(round_detail: dict, seed_index: int,
                   map_w: int = 40, map_h: int = 40) -> np.ndarray:
@@ -244,11 +263,12 @@ def apply_floor(pred: np.ndarray, floor: float = PROB_FLOOR) -> np.ndarray:
 # ── Spatial Conditional Model ──────────────────────────────────────────────
 
 def compute_cell_features(init_grid: list[list[int]],
-                          map_w: int = 40, map_h: int = 40) -> np.ndarray:
+                          map_w: int = 40, map_h: int = 40,
+                          round_features: np.ndarray | None = None) -> np.ndarray:
     """
     Compute spatial features for every cell from the initial state.
 
-    Features per cell (22 total):
+    Features per cell (22 spatial + up to 5 round-level = 27 total):
       - initial class one-hot (6)
       - 3×3 neighborhood class fractions (6), normalized
       - 5×5 outer ring class fractions (6), normalized
@@ -256,12 +276,15 @@ def compute_cell_features(init_grid: list[list[int]],
       - distance to nearest forest (1), normalized
       - distance to nearest port (1), normalized
       - count of settlements within radius 5 (1), normalized
+      - [optional] round-level features (5): E→E, S→S, F→F, E→S, settlement_density
 
-    Returns: (H, W, 22) feature array
+    Returns: (H, W, 22 or 27) feature array
     """
     from scipy.ndimage import distance_transform_edt
 
-    n_feat = 6 + 6 + 6 + 4
+    n_spatial = 6 + 6 + 6 + 4  # 22 spatial features
+    n_round = len(round_features) if round_features is not None else 0
+    n_feat = n_spatial + n_round
     features = np.zeros((map_h, map_w, n_feat), dtype=np.float64)
 
     # Convert grid to class indices
@@ -326,6 +349,11 @@ def compute_cell_features(init_grid: list[list[int]],
             features[y, x, idx + 2] = dist_port[y, x] / max_dist
             features[y, x, idx + 3] = sett_count_r5[y, x] / max(1.0, sett_count_r5.max())
 
+    # Append round-level features (same for every cell)
+    if round_features is not None:
+        for i, val in enumerate(round_features):
+            features[:, :, n_spatial + i] = val
+
     return features
 
 
@@ -346,7 +374,8 @@ def load_spatial_model():
 
 
 def spatial_prior(round_detail: dict, seed_index: int,
-                  map_w: int = 40, map_h: int = 40) -> np.ndarray | None:
+                  map_w: int = 40, map_h: int = 40,
+                  round_features: np.ndarray | None = None) -> np.ndarray | None:
     """
     Use trained spatial model to predict per-cell distributions from initial state features.
     Returns (H, W, 6) or None if no model available.
@@ -356,7 +385,7 @@ def spatial_prior(round_detail: dict, seed_index: int,
         return None
 
     init_grid = round_detail["initial_states"][seed_index]["grid"]
-    features = compute_cell_features(init_grid, map_w, map_h)
+    features = compute_cell_features(init_grid, map_w, map_h, round_features)
 
     # Flatten to (H*W, n_features), predict, reshape
     flat_features = features.reshape(-1, features.shape[-1])
@@ -461,6 +490,44 @@ def _extract_settlement_stats(round_id: str, round_detail: dict) -> dict:
         "n_factions": len(factions),
         "density": density,
     }
+
+
+def compute_round_features(calibrated_trans: np.ndarray | None,
+                            round_detail: dict) -> np.ndarray:
+    """
+    Compute round-level features for the spatial model.
+    5 features: E→E, S→S, F→F, E→S, settlement_density.
+    Falls back to historical averages if no calibrated transitions available.
+    """
+    states = round_detail.get("initial_states", [])
+    map_w = round_detail.get("map_width", 40)
+    map_h = round_detail.get("map_height", 40)
+
+    # Settlement density from initial states
+    n_sett = 0
+    total = 0
+    for s in states:
+        init_grid = s["grid"]
+        for y in range(map_h):
+            for x in range(map_w):
+                cls = TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                if cls == 1:
+                    n_sett += 1
+                total += 1
+    sett_density = n_sett / max(total, 1)
+
+    if calibrated_trans is not None:
+        trans = calibrated_trans
+    else:
+        trans = HISTORICAL_TRANSITIONS
+
+    return np.array([
+        trans[0, 0],  # E→E
+        trans[1, 1],  # S→S
+        trans[4, 4],  # F→F
+        trans[0, 1],  # E→S
+        sett_density,
+    ], dtype=np.float64)
 
 
 def _detect_round_activity(calibrated_trans: np.ndarray | None,
@@ -600,143 +667,33 @@ def _cell_observation_frequencies(round_id: str, round_detail: dict,
 def build_prediction(round_id: str, round_detail: dict, seed_index: int,
                      map_w: int = 40, map_h: int = 40) -> np.ndarray:
     """
-    Full prediction pipeline with adaptive round dynamics detection:
-      1. Spatial model prior (if available)
-      2. Round-specific transition calibration from observations
-      3. Detect round activity level and adapt blending strategy:
-         - Normal rounds (activity < 0.10): alpha=0.85, global transitions
-         - Active rounds (activity >= 0.10): per-class alpha, proximity-conditioned
-      4. Cell-level observation blending (conservative 10%)
+    Full prediction pipeline with round-conditioned spatial model:
+      1. Observation-calibrated transitions → debias via shrinkage matrix
+      2. Compute round-level features from debiased transitions
+      3. Pure spatial model prediction with round features
+      4. Fallback to debiased transition prior if no spatial model
       5. Floor enforcement
 
     Returns: (H, W, 6) probability tensor ready for submission.
     """
-    from scipy.ndimage import distance_transform_edt
-
-    # 1. Spatial model prior
-    sp = spatial_prior(round_detail, seed_index, map_w, map_h)
-
-    # 2. Round-calibrated transitions
+    # 1. Round-calibrated transitions → debias
     calibrated_trans = observation_calibrated_transitions(
         round_id, round_detail, map_w, map_h)
+    debiased_trans = debias_transitions(calibrated_trans) if calibrated_trans is not None else None
 
-    # 2b. Extract settlement stats for hidden parameter estimation
-    sett_stats = _extract_settlement_stats(round_id, round_detail)
+    # 2. Round-level features for spatial model
+    round_feats = compute_round_features(debiased_trans, round_detail)
 
-    # 3. Detect round activity (using both transition matrix and settlement stats)
-    activity = _detect_round_activity(calibrated_trans, sett_stats)
+    # 3. Spatial model (pure — subsumes transition blending)
+    pred = spatial_prior(round_detail, seed_index, map_w, map_h,
+                         round_features=round_feats)
 
-    if activity >= 0.10 and calibrated_trans is not None:
-        # HIGH-ACTIVITY ROUND: use proximity-conditioned transitions + per-class alpha
-        # R6 showed that spatial model trained on calmer rounds underestimates expansion.
+    # 4. Fallback if no spatial model
+    if pred is None:
+        trans = debiased_trans if debiased_trans is not None else HISTORICAL_TRANSITIONS
+        pred = _apply_transition_matrix(round_detail, seed_index, trans, map_w, map_h)
 
-        # Adaptive alphas based on settlement stats:
-        # Low food → settlements are collapsing → trust transitions more (lower alpha)
-        # High defense → active raids → trust transitions more for settlements
-        base_alphas = {0: 0.3, 1: 0.1, 2: 0.0, 3: 0.0, 4: 0.1, 5: 0.0}
-        if sett_stats and sett_stats.get("mean_food", 0.7) < 0.5:
-            # Very low food: settlements are starving, transitions dominate
-            base_alphas[1] = 0.05  # Less spatial trust for settlements
-            base_alphas[2] = 0.0   # Ports also fragile
-        CLASS_ALPHAS = base_alphas
-        OBS_WEIGHT = 0.10
-
-        prox = _proximity_conditioned_transitions(
-            round_id, round_detail, map_w, map_h, smoothing=0.5)
-
-        if prox is not None:
-            nf_trans, ff_trans, DIST_BINS, SIGMA, FOREST_THRESH = prox
-            n_bins = len(DIST_BINS) - 1
-            bin_centers = np.array([(DIST_BINS[b] + min(DIST_BINS[b + 1], 20)) / 2.0
-                                    for b in range(n_bins)])
-
-            init_grid = round_detail["initial_states"][seed_index]["grid"]
-            cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
-                                  for x in range(map_w)] for y in range(map_h)])
-            sett_mask = (cls_grid == 1) | (cls_grid == 2)
-            forest_mask = (cls_grid == 4)
-            dist_sett = distance_transform_edt(~sett_mask) if sett_mask.any() \
-                else np.full((map_h, map_w), 999.0)
-            dist_forest = distance_transform_edt(~forest_mask) if forest_mask.any() \
-                else np.full((map_h, map_w), 999.0)
-
-            # Stack transition matrices: (n_bins, NUM_CLASSES, NUM_CLASSES)
-            nf_stack = np.stack(nf_trans)  # (n_bins, 6, 6)
-            ff_stack = np.stack(ff_trans)  # (n_bins, 6, 6)
-
-            # Compute distance weights for all cells: (H, W, n_bins)
-            # bin_centers is (n_bins,) — broadcast against dist_sett (H, W)
-            diffs = dist_sett[:, :, None] - bin_centers[None, None, :]  # (H, W, n_bins)
-            weights = np.exp(-(diffs / SIGMA) ** 2)
-            weights /= np.maximum(weights.sum(axis=-1, keepdims=True), 1e-10)
-
-            # Forest mask for conditioning
-            near_forest = dist_forest <= FOREST_THRESH  # (H, W)
-
-            # Build per-cell transition probs: weighted sum across bins
-            # For each initial class c, the transition row is trans_stack[:, c, :]
-            # We need to index by cls_grid to get the right row per cell
-            # Result shape: (H, W, NUM_CLASSES)
-            pred = np.zeros((map_h, map_w, NUM_CLASSES), dtype=np.float64)
-            for c in range(NUM_CLASSES):
-                mask_c = cls_grid == c
-                if not mask_c.any():
-                    continue
-                # nf_stack[:, c, :] is (n_bins, NUM_CLASSES) — the transition row for class c
-                # weights[mask_c] is (N, n_bins) where N = number of cells with class c
-                nf_row = nf_stack[:, c, :]  # (n_bins, NUM_CLASSES)
-                ff_row = ff_stack[:, c, :]  # (n_bins, NUM_CLASSES)
-                w_c = weights[mask_c]  # (N, n_bins)
-                tp_nf = w_c @ nf_row  # (N, NUM_CLASSES)
-                tp_ff = w_c @ ff_row  # (N, NUM_CLASSES)
-                # Select near-forest or far-forest per cell
-                nf_c = near_forest[mask_c]  # (N,)
-                tp = np.where(nf_c[:, None], tp_nf, tp_ff)
-                # Alpha blending with spatial prior
-                alpha = CLASS_ALPHAS.get(c, 0.2)
-                if sp is not None and alpha > 0:
-                    pred[mask_c] = alpha * sp[mask_c] + (1.0 - alpha) * tp
-                else:
-                    pred[mask_c] = tp
-
-            pred = pred / np.maximum(pred.sum(axis=-1, keepdims=True), 1e-10)
-        else:
-            # Fallback if proximity computation fails
-            trans_prior = _apply_transition_matrix(
-                round_detail, seed_index, calibrated_trans, map_w, map_h)
-            if sp is not None:
-                pred = 0.25 * sp + 0.75 * trans_prior
-                pred = pred / pred.sum(axis=-1, keepdims=True)
-            else:
-                pred = trans_prior
-            OBS_WEIGHT = 0.10
-
-        # Cell-level observation blending
-        obs_freq, obs_count = _cell_observation_frequencies(
-            round_id, round_detail, seed_index, map_w, map_h)
-        mask = obs_count > 0
-        if mask.any() and OBS_WEIGHT > 0:
-            obs_dist = np.zeros_like(obs_freq)
-            obs_dist[mask] = obs_freq[mask] / obs_count[mask, None]
-            pred[mask] = (1 - OBS_WEIGHT) * pred[mask] + OBS_WEIGHT * obs_dist[mask]
-
-    else:
-        # NORMAL ROUND: spatial model dominant, global transitions
-        if calibrated_trans is not None:
-            trans_prior = _apply_transition_matrix(
-                round_detail, seed_index, calibrated_trans, map_w, map_h)
-        else:
-            trans_prior = _apply_transition_matrix(
-                round_detail, seed_index, HISTORICAL_TRANSITIONS, map_w, map_h)
-
-        if sp is not None:
-            alpha = 0.85
-            pred = alpha * sp + (1.0 - alpha) * trans_prior
-            pred = pred / pred.sum(axis=-1, keepdims=True)
-        else:
-            pred = trans_prior
-
-    # Floor enforcement
+    # 5. Floor enforcement
     return apply_floor(pred)
 
 

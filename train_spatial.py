@@ -1,10 +1,12 @@
 """
 Train the spatial conditional model on ALL completed round ground truths.
 
-Features per cell: initial class one-hot (6) + 3×3 neighbor fractions (6) + 5×5 outer ring fractions (6) = 18
+Features per cell: initial class one-hot (6) + 3×3 neighbor fractions (6) 
+  + 5×5 outer ring fractions (6) + distance/count features (4) 
+  + round-level features (5) = 27
 Target: ground truth probability distribution (6 dims)
 
-Uses MultiOutputRegressor with GradientBoosting for per-class probability prediction.
+Uses LightGBM with MultiOutputRegressor for per-class probability prediction.
 """
 
 import json
@@ -12,7 +14,7 @@ import pickle
 import numpy as np
 from pathlib import Path
 from sklearn.multioutput import MultiOutputRegressor
-from sklearn.ensemble import GradientBoostingRegressor
+import lightgbm as lgb
 
 from astar.model import compute_cell_features, apply_floor, _apply_transition_matrix, HISTORICAL_TRANSITIONS
 from astar.submit import score_prediction
@@ -50,6 +52,38 @@ def load_round_data(round_id: str):
     return detail, ground_truths
 
 
+def compute_gt_round_features(detail: dict, gts: list[np.ndarray]) -> np.ndarray:
+    """Compute round-level features from GT transition matrix."""
+    states = detail.get("initial_states", [])
+    map_w = detail.get("map_width", 40)
+    map_h = detail.get("map_height", 40)
+
+    # Compute GT transition matrix
+    gt_counts = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.float64)
+    n_sett = 0
+    total = 0
+    for s in range(len(gts)):
+        init_grid = states[s]["grid"]
+        for y in range(map_h):
+            for x in range(map_w):
+                init_cls = TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                gt_counts[init_cls] += gts[s][y, x]
+                if init_cls == 1:
+                    n_sett += 1
+                total += 1
+    row_sums = np.maximum(gt_counts.sum(axis=1, keepdims=True), 1.0)
+    gt_trans = gt_counts / row_sums
+    sett_density = n_sett / max(total, 1)
+
+    return np.array([
+        gt_trans[0, 0],  # E→E
+        gt_trans[1, 1],  # S→S
+        gt_trans[4, 4],  # F→F
+        gt_trans[0, 1],  # E→S
+        sett_density,
+    ], dtype=np.float64)
+
+
 def build_training_data_multi(round_ids: dict[int, str]):
     """Build feature matrix X and target matrix Y from multiple rounds."""
     X_parts = []
@@ -63,9 +97,14 @@ def build_training_data_multi(round_ids: dict[int, str]):
             continue
         map_w = detail.get("map_width", 40)
         map_h = detail.get("map_height", 40)
+
+        # Compute round-level features from GT
+        round_feats = compute_gt_round_features(detail, gts)
+
         for seed_idx, gt in enumerate(gts):
             init_grid = detail["initial_states"][seed_idx]["grid"]
-            features = compute_cell_features(init_grid, map_w, map_h)
+            features = compute_cell_features(init_grid, map_w, map_h,
+                                             round_features=round_feats)
             X_parts.append(features.reshape(-1, features.shape[-1]))
             Y_parts.append(gt.reshape(-1, gt.shape[-1]))
             round_labels.extend([(rnum, seed_idx)] * (map_w * map_h))
@@ -100,9 +139,11 @@ def train_and_evaluate():
         X_train, Y_train, _ = build_training_data_multi(train_ids)
 
         model = MultiOutputRegressor(
-            GradientBoostingRegressor(
-                n_estimators=300, max_depth=4, learning_rate=0.1,
-                min_samples_leaf=20, subsample=0.8,
+            lgb.LGBMRegressor(
+                n_estimators=1000, max_depth=6, learning_rate=0.05,
+                num_leaves=31, min_child_samples=20, subsample=0.8,
+                colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=0.1,
+                verbosity=-1,
             ),
             n_jobs=-1,
         )
@@ -112,11 +153,13 @@ def train_and_evaluate():
         test_rid, test_detail, test_gts = all_data[test_rnum]
         map_w = test_detail.get("map_width", 40)
         map_h = test_detail.get("map_height", 40)
+        test_round_feats = compute_gt_round_features(test_detail, test_gts)
         scores = []
         baseline_scores = []
         for s, gt in enumerate(test_gts):
             init_grid = test_detail["initial_states"][s]["grid"]
-            feat = compute_cell_features(init_grid, map_w, map_h)
+            feat = compute_cell_features(init_grid, map_w, map_h,
+                                         round_features=test_round_feats)
             flat_pred = model.predict(feat.reshape(-1, feat.shape[-1]))
             pred = flat_pred.reshape(map_h, map_w, NUM_CLASSES)
             pred = np.maximum(pred, 1e-10)
@@ -183,9 +226,11 @@ def train_and_evaluate():
     print(f"  Training on {X.shape[0]} samples, {X.shape[1]} features")
 
     final_model = MultiOutputRegressor(
-        GradientBoostingRegressor(
-            n_estimators=300, max_depth=4, learning_rate=0.1,
-            min_samples_leaf=20, subsample=0.8,
+        lgb.LGBMRegressor(
+            n_estimators=1000, max_depth=6, learning_rate=0.05,
+            num_leaves=31, min_child_samples=20, subsample=0.8,
+            colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=0.1,
+            verbosity=-1,
         ),
         n_jobs=-1,
     )
@@ -199,10 +244,12 @@ def train_and_evaluate():
     for rnum, (rid, detail, gts) in sorted(all_data.items()):
         map_w = detail.get("map_width", 40)
         map_h = detail.get("map_height", 40)
+        round_feats = compute_gt_round_features(detail, gts)
         scores = []
         for s, gt in enumerate(gts):
             init_grid = detail["initial_states"][s]["grid"]
-            feat = compute_cell_features(init_grid, map_w, map_h)
+            feat = compute_cell_features(init_grid, map_w, map_h,
+                                         round_features=round_feats)
             flat_pred = final_model.predict(feat.reshape(-1, feat.shape[-1]))
             pred = flat_pred.reshape(map_h, map_w, NUM_CLASSES)
             pred = np.maximum(pred, 1e-10)
