@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Data - exclude round logs but keep the model
+data/round_*
+
+# Dev files not needed in deployment
+.git/
+.github/
+*.md
+auto_round.py
+backtest*.py
+download_all_gt.py
+train_spatial.py
+submit_r5.py
+auto_round.log
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

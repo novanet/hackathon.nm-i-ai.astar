@@ -1,0 +1,23 @@
+# Exclude everything in data/ except the model
+data/round_*
+data/.gitkeep
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+
+# Git
+.git
+.github
+
+# Dev files
+*.md
+auto_round.py
+backtest*.py
+download_all_gt.py
+train_spatial.py
+submit_r5.py
+plan-02.md
+opening-strategy.md
+auto_round.log
