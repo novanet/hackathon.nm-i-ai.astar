@@ -61,7 +61,7 @@ async def solve(request: dict):
         log.info("Querying %d seeds with grid coverage", n_seeds)
         for seed_idx in range(n_seeds):
             try:
-                simulate_grid(round_id, seed_idx, map_w, map_h, delay=0.1)
+                simulate_grid(round_id, seed_idx, map_w, map_h, delay=0.05)
                 log.info("Seed %d: observations collected", seed_idx)
             except Exception:
                 log.exception("Failed to query seed %d", seed_idx)

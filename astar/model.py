@@ -574,8 +574,8 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
         if prox is not None:
             nf_trans, ff_trans, DIST_BINS, SIGMA, FOREST_THRESH = prox
             n_bins = len(DIST_BINS) - 1
-            bin_centers = [(DIST_BINS[b] + min(DIST_BINS[b + 1], 20)) / 2.0
-                           for b in range(n_bins)]
+            bin_centers = np.array([(DIST_BINS[b] + min(DIST_BINS[b + 1], 20)) / 2.0
+                                    for b in range(n_bins)])
 
             init_grid = round_detail["initial_states"][seed_index]["grid"]
             cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
@@ -587,30 +587,44 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
             dist_forest = distance_transform_edt(~forest_mask) if forest_mask.any() \
                 else np.full((map_h, map_w), 999.0)
 
+            # Stack transition matrices: (n_bins, NUM_CLASSES, NUM_CLASSES)
+            nf_stack = np.stack(nf_trans)  # (n_bins, 6, 6)
+            ff_stack = np.stack(ff_trans)  # (n_bins, 6, 6)
+
+            # Compute distance weights for all cells: (H, W, n_bins)
+            # bin_centers is (n_bins,) — broadcast against dist_sett (H, W)
+            diffs = dist_sett[:, :, None] - bin_centers[None, None, :]  # (H, W, n_bins)
+            weights = np.exp(-(diffs / SIGMA) ** 2)
+            weights /= np.maximum(weights.sum(axis=-1, keepdims=True), 1e-10)
+
+            # Forest mask for conditioning
+            near_forest = dist_forest <= FOREST_THRESH  # (H, W)
+
+            # Build per-cell transition probs: weighted sum across bins
+            # For each initial class c, the transition row is trans_stack[:, c, :]
+            # We need to index by cls_grid to get the right row per cell
+            # Result shape: (H, W, NUM_CLASSES)
             pred = np.zeros((map_h, map_w, NUM_CLASSES), dtype=np.float64)
-            for y in range(map_h):
-                for x in range(map_w):
-                    init_cls = cls_grid[y, x]
-                    d = dist_sett[y, x]
-                    df = dist_forest[y, x]
-
-                    # Distance-weighted transition (smooth interpolation)
-                    weights = np.array([np.exp(-((d - c) / SIGMA) ** 2)
-                                        for c in bin_centers])
-                    weights /= weights.sum()
-
-                    if df <= FOREST_THRESH:
-                        tp = sum(w * nf_trans[b][init_cls]
-                                 for b, w in enumerate(weights))
-                    else:
-                        tp = sum(w * ff_trans[b][init_cls]
-                                 for b, w in enumerate(weights))
-
-                    alpha = CLASS_ALPHAS.get(init_cls, 0.2)
-                    if sp is not None and alpha > 0:
-                        pred[y, x] = alpha * sp[y, x] + (1.0 - alpha) * tp
-                    else:
-                        pred[y, x] = tp
+            for c in range(NUM_CLASSES):
+                mask_c = cls_grid == c
+                if not mask_c.any():
+                    continue
+                # nf_stack[:, c, :] is (n_bins, NUM_CLASSES) — the transition row for class c
+                # weights[mask_c] is (N, n_bins) where N = number of cells with class c
+                nf_row = nf_stack[:, c, :]  # (n_bins, NUM_CLASSES)
+                ff_row = ff_stack[:, c, :]  # (n_bins, NUM_CLASSES)
+                w_c = weights[mask_c]  # (N, n_bins)
+                tp_nf = w_c @ nf_row  # (N, NUM_CLASSES)
+                tp_ff = w_c @ ff_row  # (N, NUM_CLASSES)
+                # Select near-forest or far-forest per cell
+                nf_c = near_forest[mask_c]  # (N,)
+                tp = np.where(nf_c[:, None], tp_nf, tp_ff)
+                # Alpha blending with spatial prior
+                alpha = CLASS_ALPHAS.get(c, 0.2)
+                if sp is not None and alpha > 0:
+                    pred[mask_c] = alpha * sp[mask_c] + (1.0 - alpha) * tp
+                else:
+                    pred[mask_c] = tp
 
             pred = pred / np.maximum(pred.sum(axis=-1, keepdims=True), 1e-10)
         else:
