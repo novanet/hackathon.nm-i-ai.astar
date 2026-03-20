@@ -439,3 +439,14 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Grid coverage verified**: 9 viewports (15×15) achieve 100% coverage of 40×40 map with 19% overlap.
 - **All 9 historical rounds**: 40×40, 5 seeds each. Model handles variable sizes via params.
 - **Updated backtest**: R9=93.47 (+0.03), R7=73.96 (+0.29), avg=83.07 (+0.10). Weighted R9=145.0.
+
+### Round 10
+- Round ID: 75e625c3-60cb-4392-af3e-c86a98bde8c2
+- Round weight: 1.6289 (1.05^10)
+- Map: 40×40, 5 seeds. Seed settlements: 39, 52, 41, 56, 50. Ports: 3, 1, 0, 2, 3.
+- Model: V8+ (50% GBM + 50% MLP, 31 features, edge_dist)
+- 50/50 queries used. Grid 9 viewports/seed + 5 extra (one per seed, shifted viewports).
+- Submitted pass 1 + pass 2 (with extra observations).
+- **Observed transition diagnostics vs historical**: S→S is -23.8% (settlements dying more), E→S is -9.4% (less expansion), F→F is +19.0% (forest very stable), P→P is -10.7%. Detected as NORMAL mode.
+- This appears to be a "quiet" round — low settlement activity, forest-dominant final state.
+- **Score: pending** (round closes 23:45 UTC)
