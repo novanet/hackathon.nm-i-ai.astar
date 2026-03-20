@@ -428,3 +428,14 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Full backtest**: R1=83.9, R2=90.2, R3=45.0, R4=88.7, R5=87.3, R6=89.4, R7=73.7, R8=95.2, R9=93.4. Avg=83.0.
 - **Gap to leader**: Leader=146.3 (raw ~94.3). Our R9 backtest=93.4 (weighted 145.0). Gap = 1.3 weighted, 0.9 raw.
 - R10 weight = 1.05^10 = 1.629. If we score 93+ raw on R10, weighted = 151+ → new leader.
+
+### Pre-R10 Optimization Audit
+- **Blend ratio re-swept**: 50/50 GBM/MLP now optimal (was 60/40). MLP improved significantly with edge_dist feature (val_kl 0.0474→0.0347), justifying more MLP weight.
+- **Calibration re-swept for 50/50**: E=1.0 (was 0.98) — blend shift already corrects Empty-class bias. F=0.95 still needed.
+- **Temperature sweep confirmed**: Current per-class temps (E/F=1.10, S=1.05, P=1.10) maximize R9 (93.47). Uniform T=1.05 gives better avg (88.44) but worse R9 (93.20). Optimize for leaderboard = max weighted round.
+- **Calibration order**: cal_then_temp vs temp_then_cal makes zero difference — mathematically expected since both are multiplicative.
+- **Collapse detection verified**: R8 correctly detected (S→S=0.079 < 0.15 threshold). All other rounds classified normal.
+- **R9 per-seed analysis**: Seeds 0,1 weakest (91.8, 92.5), seeds 2-4 strongest (94.0-94.6). Loss dominated by Empty (55-65%) and Forest (28-33%). Settlement loss only 1-3%. No actionable fix — variability inherent in round dynamics.
+- **Grid coverage verified**: 9 viewports (15×15) achieve 100% coverage of 40×40 map with 19% overlap.
+- **All 9 historical rounds**: 40×40, 5 seeds each. Model handles variable sizes via params.
+- **Updated backtest**: R9=93.47 (+0.03), R7=73.96 (+0.29), avg=83.07 (+0.10). Weighted R9=145.0.
