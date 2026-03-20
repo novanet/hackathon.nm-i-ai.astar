@@ -9,9 +9,12 @@ Builds a 40×40×6 probability tensor from:
   5. Probability floor enforcement (0.001)
 """
 
+import warnings
 import numpy as np
 from pathlib import Path
 from scipy.ndimage import gaussian_filter
+
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 from .replay import (
     TERRAIN_TO_CLASS, CLASS_NAMES, NUM_CLASSES,
     load_round_detail, load_simulations,
@@ -362,17 +365,34 @@ _spatial_model = None  # cached trained model
 
 
 def load_spatial_model():
-    """Load the trained spatial model from disk, or return None."""
+    """Load the trained spatial model from disk, or return None.
+    Supports both single model and ensemble dict {lgb, xgb, lgb_weight}."""
     global _spatial_model
     if _spatial_model is not None:
         return _spatial_model
     import pickle
     model_path = Path(__file__).parent.parent / "data" / "spatial_model.pkl"
     if model_path.exists():
-        _spatial_model = pickle.loads(model_path.read_bytes())
-        # Force single-threaded to avoid Windows multiprocessing hangs
-        if hasattr(_spatial_model, 'n_jobs'):
-            _spatial_model.n_jobs = 1
+        loaded = pickle.loads(model_path.read_bytes())
+        if isinstance(loaded, dict) and "lgb" in loaded:
+            # Ensemble format
+            class EnsemblePredictor:
+                def __init__(self, lgb_m, xgb_m, w=0.7):
+                    self.lgb = lgb_m
+                    self.xgb = xgb_m
+                    self.w = w
+                    self.n_jobs = 1
+                def predict(self, X):
+                    return self.w * self.lgb.predict(X) + (1 - self.w) * self.xgb.predict(X)
+            for m in [loaded["lgb"], loaded["xgb"]]:
+                if hasattr(m, 'n_jobs'):
+                    m.n_jobs = 1
+            _spatial_model = EnsemblePredictor(loaded["lgb"], loaded["xgb"], loaded.get("lgb_weight", 0.7))
+        else:
+            # Single model (legacy)
+            if hasattr(loaded, 'n_jobs'):
+                loaded.n_jobs = 1
+            _spatial_model = loaded
         return _spatial_model
     return None
 

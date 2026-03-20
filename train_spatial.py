@@ -11,10 +11,14 @@ Uses LightGBM with MultiOutputRegressor for per-class probability prediction.
 
 import json
 import pickle
+import warnings
 import numpy as np
 from pathlib import Path
 from sklearn.multioutput import MultiOutputRegressor
 import lightgbm as lgb
+import xgboost as xgb
+
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 from astar.model import compute_cell_features, apply_floor, _apply_transition_matrix, HISTORICAL_TRANSITIONS
 from astar.submit import score_prediction
@@ -204,11 +208,11 @@ def train_and_evaluate():
         avg = np.mean(scores)
         bavg = np.mean(baseline_scores)
         loro_results[test_rnum] = (avg, bavg)
-        print(f"  Test R{test_rnum}: spatial={avg:.2f}, baseline={bavg:.2f}, Δ={avg-bavg:+.2f}  seeds: {[f'{s:.1f}' for s in scores]}")
+        print(f"  Test R{test_rnum}: spatial={avg:.2f}, baseline={bavg:.2f}, d={avg-bavg:+.2f}  seeds: {[f'{s:.1f}' for s in scores]}")
 
     spatial_avg = np.mean([v[0] for v in loro_results.values()])
     base_avg = np.mean([v[1] for v in loro_results.values()])
-    print(f"\n  LORO average:  spatial={spatial_avg:.2f}, baseline={base_avg:.2f}, Δ={spatial_avg-base_avg:+.2f}")
+    print(f"\n  LORO average:  spatial={spatial_avg:.2f}, baseline={base_avg:.2f}, d={spatial_avg-base_avg:+.2f}")
 
     # ── Update historical transitions from all data ──
     print("\n=== UPDATED TRANSITION MATRIX (all rounds) ===")
@@ -249,13 +253,13 @@ def train_and_evaluate():
             scores.append(score_prediction(pred, gt))
         print(f"    R{rnum}: avg={np.mean(scores):.2f}")
 
-    # ── Train final model on ALL rounds ──
-    print("\n=== TRAINING FINAL MODEL (all rounds, entropy-weighted) ===")
+    # ── Train final ensemble model on ALL rounds ──
+    print("\n=== TRAINING FINAL ENSEMBLE (LGB 70% + XGB 30%, entropy-weighted) ===")
     X, Y, _, W = build_training_data_multi(ROUND_IDS, compute_weights=True)
     print(f"  Training on {X.shape[0]} samples, {X.shape[1]} features")
     print(f"  Entropy weight power: {ENTROPY_WEIGHT_POWER}")
 
-    final_model = MultiOutputRegressor(
+    lgb_model = MultiOutputRegressor(
         lgb.LGBMRegressor(
             n_estimators=500, max_depth=4, learning_rate=0.05,
             num_leaves=15, min_child_samples=50, subsample=0.7,
@@ -264,10 +268,34 @@ def train_and_evaluate():
         ),
         n_jobs=1,
     )
-    final_model.fit(X, Y, sample_weight=W)
+    lgb_model.fit(X, Y, sample_weight=W)
+    print("  LGB model trained")
 
-    MODEL_PATH.write_bytes(pickle.dumps(final_model))
-    print(f"  Model saved to {MODEL_PATH}")
+    xgb_model = MultiOutputRegressor(
+        xgb.XGBRegressor(
+            n_estimators=500, max_depth=4, learning_rate=0.05,
+            subsample=0.7, colsample_bytree=0.6,
+            reg_alpha=1.0, reg_lambda=1.0, verbosity=0,
+        ),
+        n_jobs=1,
+    )
+    xgb_model.fit(X, Y, sample_weight=W)
+    print("  XGB model trained")
+
+    # Save as ensemble dict: {lgb, xgb, lgb_weight}
+    ensemble = {"lgb": lgb_model, "xgb": xgb_model, "lgb_weight": 0.7}
+    MODEL_PATH.write_bytes(pickle.dumps(ensemble))
+    print(f"  Ensemble saved to {MODEL_PATH}")
+
+    # For scoring below, use a wrapper that blends
+    class EnsemblePredictor:
+        def __init__(self, lgb_m, xgb_m, w=0.7):
+            self.lgb = lgb_m
+            self.xgb = xgb_m
+            self.w = w
+        def predict(self, X):
+            return self.w * self.lgb.predict(X) + (1 - self.w) * self.xgb.predict(X)
+    final_model = EnsemblePredictor(lgb_model, xgb_model, 0.7)
 
     # Training set scores (sanity check)
     print("\n=== TRAINING SET SCORES ===")
