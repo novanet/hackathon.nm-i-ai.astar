@@ -13,7 +13,8 @@ import numpy as np
 from pathlib import Path
 
 from astar.client import (
-    _request, get_round_detail, get_budget, simulate, get_analysis, submit
+    _request, get_round_detail, get_budget, simulate, get_analysis, submit,
+    save_round_summary,
 )
 from astar.model import (
     build_prediction, prediction_to_list, apply_floor,
@@ -258,6 +259,7 @@ def main():
 
     # Final summary
     print_final_summary(round_number, round_id)
+    save_round_summary(round_id)
 
 
 if __name__ == "__main__":
