@@ -204,3 +204,12 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R1-R6] Spatial model retrained with 22 features on 48K samples, saved to data/spatial_model.pkl
 - [R1-R6] Training set (in-sample) backtests: R1=83.9, R2=84.4, R3=53.1, R4=91.6, R5=82.2, R6=80.3
 - [R1-R6] Deployed as Cloud Run revision astar-solver-00005-ksw
+
+### Round 7
+- Round ID: 36e581f1-73f8-453f-ab98-cbe3052b701b
+- Round weight: 1.41 (1.05^7)
+- Map: 40x40, 5 seeds, 44-60 initial settlements per seed (seed 4 had 60 — highest)
+- 50/50 queries used (45 grid + 5 extra on high-settlement seeds)
+- All 5 seeds submitted (status=accepted), score pending (round closes 14:48 UTC)
+- **Bug encountered**: `run_r7.py` saved duplicate simulation files in raw format (without `request`/`response` wrapper), causing `KeyError: 'request'` in `load_simulations()`. Fixed by removing bad files and patching the script to not save duplicates (client.py already handles logging).
+- First submission attempt failed (all 5 seeds); resubmitted after cleanup — all accepted
