@@ -24,6 +24,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/solve")
+def solve_get():
+    return {"status": "ready", "method": "POST required"}
+
+
 @app.post("/solve")
 async def solve(request: dict):
     """
@@ -68,16 +73,59 @@ async def solve(request: dict):
     else:
         log.info("Skipping queries — only %d remaining (need %d)", remaining, queries_needed)
 
-    # Phase 2: Build predictions and submit
+    # Phase 1b: Submit initial predictions
     results = {}
     for seed_idx in range(n_seeds):
         try:
             pred = build_prediction(round_id, detail, seed_idx, map_w, map_h)
             resp = submit(round_id, seed_idx, prediction_to_list(pred))
             results[seed_idx] = resp
-            log.info("Seed %d submitted: %s", seed_idx, resp.get("status"))
+            log.info("Seed %d pass 1: %s", seed_idx, resp.get("status"))
         except Exception:
-            log.exception("Failed seed %d", seed_idx)
+            log.exception("Failed seed %d pass 1", seed_idx)
             results[seed_idx] = {"status": "error"}
+
+    # Phase 2: Spend remaining budget on extra observations + resubmit
+    try:
+        budget = get_budget()
+        extra_remaining = budget["queries_max"] - budget["queries_used"]
+    except Exception:
+        extra_remaining = 0
+
+    if extra_remaining > 0:
+        log.info("Spending %d extra queries", extra_remaining)
+        extra_vps = [(7, 7, 15, 15), (7, 20, 15, 15), (20, 7, 15, 15),
+                     (20, 20, 15, 15), (3, 3, 15, 15)]
+        # Sort seeds by settlement count
+        seed_order = sorted(
+            range(n_seeds),
+            key=lambda i: len([s for s in detail["initial_states"][i]["settlements"]
+                               if s["alive"]]),
+            reverse=True,
+        )
+        used = 0
+        for seed_idx in seed_order:
+            if used >= extra_remaining:
+                break
+            vx, vy, vw, vh = extra_vps[used % len(extra_vps)]
+            try:
+                from astar.client import simulate
+                simulate(round_id, seed_idx, vx, vy,
+                         min(vw, map_w - vx), min(vh, map_h - vy))
+                used += 1
+            except Exception:
+                log.exception("Extra query failed, stopping")
+                break
+            time.sleep(0.05)
+
+        # Resubmit with extra observations
+        for seed_idx in range(n_seeds):
+            try:
+                pred = build_prediction(round_id, detail, seed_idx, map_w, map_h)
+                resp = submit(round_id, seed_idx, prediction_to_list(pred))
+                results[seed_idx] = resp
+                log.info("Seed %d pass 2: %s", seed_idx, resp.get("status"))
+            except Exception:
+                log.exception("Failed seed %d pass 2", seed_idx)
 
     return {"status": "completed", "seeds_submitted": n_seeds, "results": results}

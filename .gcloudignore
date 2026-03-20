@@ -20,7 +20,20 @@ backtest*.py
 download_all_gt.py
 train_spatial.py
 submit_r5.py
+submit_r6*.py
+analyze_*.py
+analysis_*.py
+optimize_*.py
+perclass_*.py
+repeat_*.py
+spatial_analysis_*.py
+finetune_*.py
+eval_*.py
+run_queries.py
+run_r7.py
+run_next_round.py
 auto_round.log
+plan-*.md
 
 # IDE / OS
 .vscode/

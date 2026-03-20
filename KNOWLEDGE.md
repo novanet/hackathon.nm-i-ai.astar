@@ -213,3 +213,5 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - All 5 seeds submitted (status=accepted), score pending (round closes 14:48 UTC)
 - **Bug encountered**: `run_r7.py` saved duplicate simulation files in raw format (without `request`/`response` wrapper), causing `KeyError: 'request'` in `load_simulations()`. Fixed by removing bad files and patching the script to not save duplicates (client.py already handles logging).
 - First submission attempt failed (all 5 seeds); resubmitted after cleanup — all accepted
+- Cloud Run redeployed as revision astar-solver-00006-hsg (URL: astar-solver-464650180745.europe-north1.run.app)
+- Generic `run_next_round.py` created: auto-finds active round, diagnostics, extra query spending, no duplicate file saves
