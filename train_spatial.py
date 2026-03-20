@@ -32,6 +32,7 @@ ROUND_IDS = {
     5: "fd3c92ff-3178-4dc9-8d9b-acf389b3982b",
     6: "ae78003a-4efe-425a-881a-d16a39bca0ad",
     7: "36e581f1-73f8-453f-ab98-cbe3052b701b",
+    8: "c5cdf100-a876-4fb7-b5d8-757162c97989",
 }
 
 
@@ -53,7 +54,11 @@ def load_round_data(round_id: str):
 
 
 def compute_gt_round_features(detail: dict, gts: list[np.ndarray]) -> np.ndarray:
-    """Compute round-level features from GT transition matrix."""
+    """Compute round-level features from GT transition matrix.
+    Returns 8 features matching compute_round_features() in model.py:
+    E→E, S→S, F→F, E→S, settlement_density, mean_food, mean_wealth, mean_defense.
+    For GT training, settlement stats are derived as proxies from GT distributions.
+    """
     states = detail.get("initial_states", [])
     map_w = detail.get("map_width", 40)
     map_h = detail.get("map_height", 40)
@@ -75,12 +80,25 @@ def compute_gt_round_features(detail: dict, gts: list[np.ndarray]) -> np.ndarray
     gt_trans = gt_counts / row_sums
     sett_density = n_sett / max(total, 1)
 
+    # Derive settlement stat proxies from GT:
+    # S→S correlates with food/defense; high S→S = good food + defense
+    ss_rate = gt_trans[1, 1]
+    # Proxy: food ~ S→S persistence (high survival = good food)
+    mean_food = 0.3 + 0.7 * ss_rate  # range ~[0.3, 1.0]
+    # Proxy: wealth ~ E→S expansion rate (more expansion = more trade/wealth)
+    mean_wealth = gt_trans[0, 1] * 0.3  # range ~[0, 0.04]
+    # Proxy: defense ~ 1 - S→E collapse rate
+    mean_defense = 1.0 - gt_trans[1, 0]  # range ~[0.4, 0.7]
+
     return np.array([
         gt_trans[0, 0],  # E→E
         gt_trans[1, 1],  # S→S
         gt_trans[4, 4],  # F→F
         gt_trans[0, 1],  # E→S
         sett_density,
+        mean_food,
+        mean_wealth,
+        mean_defense,
     ], dtype=np.float64)
 
 
@@ -140,12 +158,12 @@ def train_and_evaluate():
 
         model = MultiOutputRegressor(
             lgb.LGBMRegressor(
-                n_estimators=1000, max_depth=6, learning_rate=0.05,
-                num_leaves=31, min_child_samples=20, subsample=0.8,
-                colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=0.1,
+                n_estimators=500, max_depth=4, learning_rate=0.05,
+                num_leaves=15, min_child_samples=50, subsample=0.7,
+                colsample_bytree=0.6, reg_alpha=1.0, reg_lambda=1.0,
                 verbosity=-1,
             ),
-            n_jobs=-1,
+            n_jobs=1,
         )
         model.fit(X_train, Y_train)
 
@@ -227,12 +245,12 @@ def train_and_evaluate():
 
     final_model = MultiOutputRegressor(
         lgb.LGBMRegressor(
-            n_estimators=1000, max_depth=6, learning_rate=0.05,
-            num_leaves=31, min_child_samples=20, subsample=0.8,
-            colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=0.1,
+            n_estimators=500, max_depth=4, learning_rate=0.05,
+            num_leaves=15, min_child_samples=50, subsample=0.7,
+            colsample_bytree=0.6, reg_alpha=1.0, reg_lambda=1.0,
             verbosity=-1,
         ),
-        n_jobs=-1,
+        n_jobs=1,
     )
     final_model.fit(X, Y)
 

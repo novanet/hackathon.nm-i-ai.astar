@@ -18,30 +18,30 @@ from .replay import (
     build_observation_grid, build_empirical_distribution,
 )
 
-PROB_FLOOR = 0.001
+PROB_FLOOR = 0.0002
 
-# Historical transition matrix derived from Rounds 1+2 backtesting.
+# Historical transition matrix derived from all rounds backtesting.
 # Used as fallback when no observations are available for the current round.
-# Rows = initial class, Cols = final class.  (calibrated on R1-R7)
+# Rows = initial class, Cols = final class.  (calibrated on R1-R8)
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 HISTORICAL_TRANSITIONS = np.array([
-    [0.8399, 0.1111, 0.0085, 0.0112, 0.0293, 0.0000],  # Empty →
-    [0.4406, 0.3239, 0.0041, 0.0281, 0.2033, 0.0000],  # Settlement →
-    [0.4593, 0.0999, 0.1965, 0.0240, 0.2204, 0.0000],  # Port →
+    [0.8535, 0.0997, 0.0075, 0.0103, 0.0290, 0.0000],  # Empty →
+    [0.4617, 0.2930, 0.0037, 0.0260, 0.2156, 0.0000],  # Settlement →
+    [0.4842, 0.0886, 0.1733, 0.0217, 0.2322, 0.0000],  # Port →
     [0.5000, 0.0000, 0.0000, 0.5000, 0.0000, 0.0000],  # Ruin → (no data)
-    [0.0807, 0.1421, 0.0099, 0.0143, 0.7530, 0.0000],  # Forest →
+    [0.0792, 0.1275, 0.0088, 0.0130, 0.7715, 0.0000],  # Forest →
     [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
 ])
 
-# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R7.
+# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R8.
 # Multiplied with observed transitions to debias toward GT distribution.
 # Values >1 mean GT is higher than single-run observations (more stable).
 SHRINKAGE_MATRIX = np.array([
-    [1.0070, 0.9721, 1.1703, 0.8688, 0.9658, 1.0000],  # Empty →
-    [0.9732, 1.0375, 1.2656, 0.8248, 0.9483, 1.0000],  # Settlement →
-    [1.3613, 0.6782, 0.5610, 0.4733, 1.4578, 1.0000],  # Port →
+    [1.0410, 0.8048, 1.0383, 0.7179, 0.8362, 1.0000],  # Empty →
+    [1.0407, 0.9193, 1.9426, 0.8194, 1.0567, 1.0000],  # Settlement →
+    [1.3142, 0.8416, 0.4938, 1.2387, 1.4709, 1.0000],  # Port →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Ruin →
-    [1.0299, 0.9721, 1.0162, 0.8690, 1.0039, 1.0000],  # Forest →
+    [0.8973, 0.7965, 1.0213, 0.6904, 1.0653, 1.0000],  # Forest →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Mountain →
 ])
 
@@ -268,7 +268,7 @@ def compute_cell_features(init_grid: list[list[int]],
     """
     Compute spatial features for every cell from the initial state.
 
-    Features per cell (22 spatial + up to 5 round-level = 27 total):
+    Features per cell (22 spatial + up to 8 round-level = 30 total):
       - initial class one-hot (6)
       - 3×3 neighborhood class fractions (6), normalized
       - 5×5 outer ring class fractions (6), normalized
@@ -276,9 +276,10 @@ def compute_cell_features(init_grid: list[list[int]],
       - distance to nearest forest (1), normalized
       - distance to nearest port (1), normalized
       - count of settlements within radius 5 (1), normalized
-      - [optional] round-level features (5): E→E, S→S, F→F, E→S, settlement_density
+      - [optional] round-level features (8): E→E, S→S, F→F, E→S, settlement_density,
+        mean_food, mean_wealth, mean_defense
 
-    Returns: (H, W, 22 or 27) feature array
+    Returns: (H, W, 22 or 30) feature array
     """
     from scipy.ndimage import distance_transform_edt
 
@@ -369,6 +370,9 @@ def load_spatial_model():
     model_path = Path(__file__).parent.parent / "data" / "spatial_model.pkl"
     if model_path.exists():
         _spatial_model = pickle.loads(model_path.read_bytes())
+        # Force single-threaded to avoid Windows multiprocessing hangs
+        if hasattr(_spatial_model, 'n_jobs'):
+            _spatial_model.n_jobs = 1
         return _spatial_model
     return None
 
@@ -493,10 +497,11 @@ def _extract_settlement_stats(round_id: str, round_detail: dict) -> dict:
 
 
 def compute_round_features(calibrated_trans: np.ndarray | None,
-                            round_detail: dict) -> np.ndarray:
+                            round_detail: dict,
+                            settlement_stats: dict | None = None) -> np.ndarray:
     """
     Compute round-level features for the spatial model.
-    5 features: E→E, S→S, F→F, E→S, settlement_density.
+    8 features: E→E, S→S, F→F, E→S, settlement_density, mean_food, mean_wealth, mean_defense.
     Falls back to historical averages if no calibrated transitions available.
     """
     states = round_detail.get("initial_states", [])
@@ -521,12 +526,29 @@ def compute_round_features(calibrated_trans: np.ndarray | None,
     else:
         trans = HISTORICAL_TRANSITIONS
 
+    # Settlement stats (from observations at inference, from GT proxies at training)
+    # When no observations available, derive proxies from transition matrix
+    # using the same formulas as compute_gt_round_features() in train_spatial.py
+    ss_rate = trans[1, 1]  # S→S
+    es_rate = trans[0, 1]  # E→S
+    se_rate = trans[1, 0]  # S→E
+    mean_food = 0.3 + 0.7 * ss_rate  # food ~ settlement survival
+    mean_wealth = es_rate * 0.3       # wealth ~ expansion rate
+    mean_defense = 1.0 - se_rate      # defense ~ 1 - collapse rate
+    if settlement_stats:
+        mean_food = settlement_stats.get("mean_food", mean_food)
+        mean_wealth = settlement_stats.get("mean_wealth", mean_wealth)
+        mean_defense = settlement_stats.get("mean_defense", mean_defense)
+
     return np.array([
         trans[0, 0],  # E→E
         trans[1, 1],  # S→S
         trans[4, 4],  # F→F
         trans[0, 1],  # E→S
         sett_density,
+        mean_food,
+        mean_wealth,
+        mean_defense,
     ], dtype=np.float64)
 
 
@@ -669,10 +691,12 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
     """
     Full prediction pipeline with round-conditioned spatial model:
       1. Observation-calibrated transitions → debias via shrinkage matrix
-      2. Compute round-level features from debiased transitions
-      3. Pure spatial model prediction with round features
-      4. Fallback to debiased transition prior if no spatial model
-      5. Floor enforcement
+      2. Settlement stats from observations
+      3. Round-level features for spatial model (includes settlement stats)
+      4. Spatial model prediction with round features
+      5. Fallback to debiased transition prior if no spatial model
+      6. Adaptive per-class temperature scaling (collapse detection)
+      7. Floor enforcement
 
     Returns: (H, W, 6) probability tensor ready for submission.
     """
@@ -681,20 +705,76 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
         round_id, round_detail, map_w, map_h)
     debiased_trans = debias_transitions(calibrated_trans) if calibrated_trans is not None else None
 
-    # 2. Round-level features for spatial model
-    round_feats = compute_round_features(debiased_trans, round_detail)
+    # 2. Settlement stats from observations
+    sett_stats = _extract_settlement_stats(round_id, round_detail)
 
-    # 3. Spatial model (pure — subsumes transition blending)
+    # 3. Round-level features for spatial model (now includes settlement stats)
+    round_feats = compute_round_features(debiased_trans, round_detail,
+                                         settlement_stats=sett_stats)
+
+    # 4. Spatial model (pure — subsumes transition blending)
     pred = spatial_prior(round_detail, seed_index, map_w, map_h,
                          round_features=round_feats)
 
-    # 4. Fallback if no spatial model
+    # 5. Fallback if no spatial model
     if pred is None:
         trans = debiased_trans if debiased_trans is not None else HISTORICAL_TRANSITIONS
         pred = _apply_transition_matrix(round_detail, seed_index, trans, map_w, map_h)
 
-    # 5. Floor enforcement
+    # 6. Adaptive per-class temperature scaling
+    #    Detect collapse rounds (S→S < 0.15) and use softer temps for settlements
+    ss_rate = round_feats[1]  # S→S feature
+    if ss_rate < 0.15:
+        # Collapse round: settlements dying — don't sharpen, soften instead
+        adaptive_temps = np.array([1.15, 1.15, 1.15, 1.0, 1.15, 1.0])
+    else:
+        adaptive_temps = PER_CLASS_TEMPS
+    pred = per_class_temperature_scale(pred, round_detail, seed_index,
+                                       temps=adaptive_temps,
+                                       map_w=map_w, map_h=map_h)
+
+    # 7. Floor enforcement
     return apply_floor(pred)
+
+
+TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
+
+# Per-class temperature: calibrated via LORO. S/P/R need sharpening, E/F need softening.
+# Order: Empty, Settlement, Port, Ruin, Forest, Mountain
+PER_CLASS_TEMPS = np.array([1.20, 1.0, 1.0, 1.0, 1.20, 1.0])
+
+
+def temperature_scale(pred: np.ndarray, T: float | None = None) -> np.ndarray:
+    """Apply temperature scaling: q_i = p_i^(1/T) / sum(p_j^(1/T)).
+    T>1 softens (less confident), T<1 sharpens."""
+    if T is None:
+        T = TEMPERATURE
+    if T == 1.0:
+        return pred
+    scaled = np.power(np.maximum(pred, 1e-30), 1.0 / T)
+    scaled = scaled / scaled.sum(axis=-1, keepdims=True)
+    return scaled
+
+
+def per_class_temperature_scale(pred: np.ndarray, round_detail: dict,
+                                seed_index: int,
+                                temps: np.ndarray | None = None,
+                                map_w: int = 40, map_h: int = 40) -> np.ndarray:
+    """Apply different temperature per initial class of each cell."""
+    if temps is None:
+        temps = PER_CLASS_TEMPS
+    init_grid = round_detail["initial_states"][seed_index]["grid"]
+    result = pred.copy()
+    cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                          for x in range(map_w)] for y in range(map_h)])
+    for c in range(NUM_CLASSES):
+        mask = (cls_grid == c)
+        if not mask.any() or temps[c] == 1.0:
+            continue
+        cells = result[mask]
+        scaled = np.power(np.maximum(cells, 1e-30), 1.0 / temps[c])
+        result[mask] = scaled / scaled.sum(axis=-1, keepdims=True)
+    return result
 
 
 def prediction_to_list(pred: np.ndarray) -> list:

@@ -71,7 +71,7 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **HOT STREAK**: Average of last 3 round scores is also tracked (separate from leaderboard). Unclear if this affects final ranking.
 - **ROUND SCORE**: Average of 5 per-seed scores. Unsubmitted seeds = 0. Always submit all 5.
 - **SCORE FORMULA**: `score = max(0, min(100, 100 × exp(-3 × weighted_kl)))` where weighted_kl = entropy-weighted average KL across dynamic cells only.
-- **FLOOR**: Docs recommend 0.01 but our backtest shows 0.001 is better (+1.6 pts). Never use 0.0.
+- **FLOOR**: ~~Docs recommend 0.01 but our backtest shows 0.001 is better (+1.6 pts).~~ Now using 0.0003 (optimal per LORO sweep). Never use 0.0.
 - ~~[Round 2] Using probability floor 0.01 (default) — awaiting score to calibrate~~
 - [Backtest R1] Probability floor sweep: 0.001 > 0.005 > 0.01. Floor 0.001 scores 74.3 vs 72.7 at 0.01 (+1.6 pts). Now using 0.001.
 - [Backtest R1] Pure transition model (alpha=1.0) scores 72.7, beating all blends with initial prior (alpha=0.5 → 61.4, alpha=0.0 → 15.8)
@@ -101,6 +101,22 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R6] Proximity-conditioned transitions (near/far settlement) capture key spatial patterns without relying on pre-trained model.
 - [R6] 10% cell-level obs blending consistently helps on top of any base model (biased proxy metric, but directionally correct).
 - [R7] **Observation bias**: Individual simulation runs overestimate transition rates vs GT probability tensor. E.g., observed S→S=38% but GT S→S=60.5%. This is because the GT averages across many stochastic runs, smoothing out volatility. Our observation-calibrated transitions are systematically too volatile.
+- [R7-R8] **Model is hypersensitive to round feature estimates**: Oracle test shows +8.74 pts on R7 from using GT features vs our estimates, yet the feature differences are tiny (S→S: 0.4026 vs 0.4216, only 4.5% error). The model learned to rely heavily on the S→S feature.
+- [R7-R8] **Feature estimation errors (obs-available rounds)**: S→S std=0.014, E→E std=0.005, F→F std=0.007, E→S std=0.005. S→S has 3x higher variance than others.
+- [R7-R8] **Cell-level observation blending still hurts**: Tested alpha=[0.3, 0.5, 0.7, 1.0, adaptive]. All alphas make scores WORSE on both R6 and R7. Single-run stochastic noise overwhelms the signal.
+- [R7-R8] **Inference-time ensemble (feature perturbation)**: Sampling 20 predictions with perturbed round features and averaging shows +1.21 on R7, +0.07 on R2, but -0.59 on R6. Marginal, inconsistent.
+- [R7-R8] **Training with noisy round features (augmentation)**: Shows +8.09 on R7 in train-set eval, but **LORO shows -0.32 avg** — no real generalization benefit. The improvements were overfitting artifacts.
+- [R7-R8] **LORO CV still at 70.25** (orig) vs 69.93 (augmented). No improvement path found from feature noise approaches.
+- [R7-R8] **R7 diagnosis**: Settlement prediction is the main problem. When GT=Settlement, model only assigns 0.289 probability (vs 0.375 on R6). Leaks mass to Empty (0.435) and Forest (0.242).
+- [R7-R8] **Key insight**: More training data (new rounds) is the primary improvement lever. Model needs to have seen similar dynamics to generalize.
+- [R8] **Temperature scaling**: LORO sweep across T=[0.9..1.5] shows T=1.15 optimal. LORO avg 73.96→75.50 (+1.54). Consistent improvement on 6/7 rounds (R3 regresses due to its extreme outlier dynamics). Applied in `build_prediction()` before floor.
+  - Per-round gains: R1 +5.66, R2 +2.80, R4 -0.51, R5 +1.14, R6 +5.38, R7 +1.32; R3 -5.05
+- [R8] **n_jobs=-1 causes Windows hangs**: `MultiOutputRegressor(n_jobs=-1)` triggers multiprocessing that stalls on Windows. Fixed to `n_jobs=1` in training + `load_spatial_model()` patches loaded pickles.
+- [R8] **Heavy regularization (+0.97 LORO)**: LightGBM params changed from (n_est=1000, depth=6, leaves=31, reg_alpha/lambda=0.1) → (n_est=500, depth=4, leaves=15, min_child=50, subsample=0.7, colsample=0.6, reg_alpha/lambda=1.0). LORO 75.50→76.47. Dramatically fixes R3 overfitting (in-sample R3 jumped from 37.0→91.2).
+- [R8] **Per-class temperature scaling (+0.34 LORO)**: E=1.15, S=0.80, P=0.80, R=0.80, F=1.15, M=1.0. Settlement/Port/Ruin need SHARPENING (T<1), not softening. Empty/Forest need smoothing. Applied after spatial prediction, before floor.
+- [R8] **Floor sweep**: 0.0003 is optimal (+0.08 LORO over 0.001). ~~0.001 was previous best.~~
+- [R8] **Combined LORO gain**: 75.50 → 76.88 (+1.38 total). heavy_reg +0.97, per-class temps +0.34, floor +0.08.
+- [R8] **Meta-model REJECTED**: LOO bias correction for round features worsens ALL test rounds. Only 4 observed rounds with S→S std=0.014 — insufficient data for reliable correction. Skip.
 
 ## Per-Round Notes
 
@@ -249,3 +265,78 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Round features have huge variance**: R3 E→E=0.989 (calm) vs R6 E→E=0.702 (chaos) vs R7 E→E=0.852 — this is the killer feature
 - ~~[R6] Alpha is round-dependent~~ → now handled by round-conditioned features in spatial model
 - ~~[R6] Proximity-conditioned transitions~~ → subsumed by spatial model with round features
+
+### Round 8
+- Round ID: c5cdf100-a876-4fb7-b5d8-757162c97989
+- Round weight: 1.477 (1.05^8)
+- Map: 40x40, 5 seeds; settlements per seed: 60, 37, 56, 38, 37; ports: 4, 3, 1, 2, 0
+- 50/50 queries used (45 grid + 5 extra on settlement-dense seeds)
+- All 5 seeds submitted (pass 1 + pass 2 with extra obs), status=accepted
+- **VERY CALM round** (activity=0.00%): Empty→Empty +11% above historical, Settlement→Settlement -25.7% (but this is debiased)
+- Transition diagnostics: Empty stable, Settlements dying more, Forest much more stable (+16.6% above hist)
+- Model V3 used (LightGBM, 27 features, debiased round features)
+- **Patched mid-round**: Resubmitted all 5 seeds with 20-sample inference-time ensemble (feature perturbation). Then resubmitted again with T=1.15 temperature scaling (LORO +1.54).
+- **n_jobs bug**: `MultiOutputRegressor(n_jobs=-1)` causes Windows multiprocessing hangs during prediction. Fixed by setting `n_jobs=1` in training and patching `load_spatial_model()` to force it on loaded pickles.
+- **Score: 73.68 (weighted 108.87, rank 81/214)** — NEW BEST weighted score (beats R6's 104.4)
+- Seeds: 68.66, 80.27, 68.78, 75.87, 74.84
+- Ground truth downloaded for all 5 seeds
+- **R8 was a "CIVILIZATION COLLAPSE" round** — 0% settlement survival in GT argmax. ALL settlements died.
+  - Probabilistic S→S = 6.7%, S→E = 61.5%, S→F = 30.7%
+  - E→S = 2.0%, E→E = 94.8%, F→F = 90.1%
+  - GT argmax: 0% settlement, 0% port, 0% ruin — pure empty/forest/mountain
+  - But GT probability: residual 2-3% settlement probability (some sim runs kept settlements alive)
+  - Mean entropy: 0.270 (lowest of all rounds — very confident predictions)
+- **Matches R3 and R4 collapse pattern**: R3 (S→S=1.8%), R4 (S→S=23.5%), R8 (S→S=6.7%) — all "harsh" rounds
+- **Round dynamics clustering**: 3/8 rounds (37.5%) are "collapse" (R3, R4, R8); 5/8 are "normal" (R1, R2, R5, R6, R7: S→S=33-42%)
+- **Current optimized model REGRESSED on R8**: 71.51 avg vs 73.68 submitted (-2.17 pts worse)
+  - All 5 seeds regressed: per-seed delta -1.41 to -3.16
+  - Cause: Per-class settlement sharpening (T=0.80) pushes already-small settlement probs even lower, but GT wants ~2-3%
+  - Current model: Sett=0.84-1.26%. GT: Sett=1.56-3.01%. Submitted: Sett=0.91-1.21%
+  - **Per-class temps hurt on collapse rounds where settlement prob is small but nonzero**
+- **Error analysis (R8 S0)**: 62.4% of KL loss from Empty cells, 32.0% from Forest, 4.9% from Settlement. Settlement has highest mean KL per cell (0.136) despite small count (n=56)
+
+### Multi-Round Retraining (R1-R8)
+- [R1-R8] HISTORICAL_TRANSITIONS updated from all 8 rounds (64K cells, 40 seeds)
+- [R1-R8] Transition matrix: Empty→Empty 85.4%, Set→Set 29.3%, For→For 77.2%, Port→Port 17.3%
+- [R1-R8] Spatial model retrained with 27 features (22 spatial + 5 round-level) on 64K samples
+- [R1-R8] **LORO avg: 77.79** (was 75.40 with R1-R7 — +2.39 pts from adding R8 data!)
+  - Per-round: R1=75.5, R2=83.4, R3=83.3, R4=86.9, R5=82.3, R6=77.3, R7=66.1, R8=67.6
+  - R3 LORO: 57.4 → 83.3 (+25.9!) — R8 collapse data dramatically helps R3 prediction
+  - R8 LORO: 67.6 (new) — decent for a collapse round given only R3/R4 as similar training
+- [R1-R8] In-sample backtests (with observations): R1=80.3, R2=88.8, R4=85.0, R5=85.3, R6=87.2, R7=70.7, R8=93.3
+  - R3=35.1 (no observation files — build_prediction falls back to bare model)
+- [R1-R8] Model saved to data/spatial_model.pkl
+
+### Leaderboard Analysis (post-R8)
+- Our leaderboard score: 108.87 (rank 88/278)
+- Top team: 140.30. Top 10: ~137-140. Top 50: ~118-120.
+- Gap to top 50: ~10-12 pts weighted. Need R9+ to score ~77-80 raw to reach top 50 by R14.
+- Each round's weight is 1.05^n, so later rounds carry more. R14 weight = 1.98.
+
+### Critical Insights for R9+
+- **Collapse detection is KEY**: 37.5% of rounds are collapse. Model needs to identify this from observations and respond appropriately.
+  - When observed S→S ≈ 0, settlements are dying. Don't sharpen settlement predictions — they need to stay soft.
+  - ~~Per-class temps of T=0.80 for settlements HURT on collapse rounds. Consider adaptive temps based on observed dynamics.~~ FIXED in V4.
+- **Observation debiasing confirmed**: Debiased S→S correlates well with GT. But single-run observations still overestimate volatility by ~20%.
+- **More training data = biggest lever**: R3 LORO jumped +25.9 from having R8 (similar dynamics). Each new round improves generalization significantly.
+- **Model performs well on "normal" rounds**: R2=83.4, R5=82.3, R6=77.3 are solid. The weak points are collapse rounds (R8=67.6) and R7=66.1 (which had unusual settlement stability).
+- ~~**Per-class temps should be adaptive**: Use T=0.80 for settlements only when the round is "normal" (S→S > 0.15). For collapse rounds, use T=1.15 (softer) for settlements.~~ IMPLEMENTED in V4.
+- ~~**Priority improvements**: (1) Adaptive per-class temps based on observed dynamics, (2) Better collapse detection from early observations, (3) Consider submitting in multiple passes — first a safe prediction, then refine based on analysis~~ ALL DONE in V4.
+
+### Model V4: Optimized Spatial + Adaptive Temps (post-R8)
+- **Architecture**: LightGBM (500 trees, depth=4, leaves=15, min_child=50) with **30 features** (22 spatial + 8 round-level)
+- **New round features** (was 5, now 8): E→E, S→S, F→F, E→S, settlement_density, **mean_food, mean_wealth, mean_defense** (from observed settlement stats)
+- **Adaptive per-class temps**: Collapse detection via debiased S→S < 0.15:
+  - Normal rounds: [1.20, 1.0, 1.0, 1.0, 1.20, 1.0] — only soften Empty/Water, NO sharpening of S/F/P
+  - Collapse rounds: [1.15, 1.15, 1.15, 1.0, 1.15, 1.0] — soften everything so settlement residuals preserved
+- **Key insight**: ~~Old PER_CLASS_TEMPS=[1.15, 0.80, 0.80, 0.80, 1.15, 1.0] sharpened S/F/P~~ The V4 spatial model already calibrates the right class distributions. Additional per-class sharpening was counterproductive. Empty/Water softening (T=1.20) is the only beneficial post-processing.
+- **PROB_FLOOR**: 0.0002 (was 0.0003, sweep showed marginal improvement)
+- **SHRINKAGE_MATRIX**: Updated from R1-R8 data (was R1-R7). Notable changes: Settlement→Port 1.27→1.94, Forest→Settlement 0.97→0.80
+- **HISTORICAL_TRANSITIONS**: Updated from R1-R8 averages (was R1-R7)
+- **Settlement stat fallback**: When no observations, derive proxies from transition matrix: mean_food=0.3+0.7×S→S, mean_wealth=E→S×0.3, mean_defense=1.0-S→E
+- **LORO**: 78.05 (was 77.79 — +0.26 from settlement stat features)
+- **Backtest (rounds with observations)**: R2=87.59 (+1.32), R5=84.69 (+4.34), R6=86.99 (+5.58), R7=67.13 (+3.31), R8=93.39 (+21.88). Average **+7.29 pts** on obs rounds.
+- **Backtest (rounds without observations)**: R1=81.80 (-0.36), R3=36.10 (-47.24), R4=84.46 (-6.42). These regress but are irrelevant — live rounds always have observations.
+- **Observation blending tested and REJECTED**: Blending spatial model with per-cell observation frequencies (Bayesian, MODEL_STRENGTH=3) made ALL rounds worse (-0.5 to -10 pts). Observations are single stochastic runs, not probability distributions. The spatial model already captures the distribution; blending with individual outcomes adds noise.
+- **Temperature sweep**: Monotonic trend — softer is better for V4. Sharpening S/F/P (old T=0.80) actively hurts. E/W softening (T=1.20) adds +0.17 pts over T=1.15.
+- **R9 weight**: 1.05^9 = 1.55. Raw ~90 needed to compete with leader (140.30). Realistic target: 80-85 raw → 124-132 weighted.
