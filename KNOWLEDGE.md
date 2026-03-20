@@ -191,3 +191,6 @@ Critical learnings accumulated during the competition. Copilot should append fin
   - Hybrid: avg_ll=-0.750, vs Per-class=-0.759, Global=-0.760, Proximity-only=-0.763, Pure-transitions=-0.774
 - 8 submission passes: baseline → obs-calibrated → alpha=0.2 → alpha=0.25+obs → per-class alpha → proximity → hybrid (FINAL)
 - **Takeaway**: When round dynamics differ from training data, reduce spatial model weight and rely more on round-specific calibrated transitions
+- [R6] **Adaptive model deployed**: `build_prediction()` now auto-detects round activity from calibrated transitions. Activity threshold 0.10: high-activity → proximity-conditioned + per-class alpha; normal → alpha=0.85 spatial dominant.
+- [R6] **Vectorized proximity computation**: O(H×W) Python loop replaced with numpy broadcasting — 17s→1.5s per seed. All 5 seeds in <8s.
+- [R6] **Cloud Run deployment ready**: Code pushed, Dockerfile includes spatial_model.pkl. Deploy with `gcloud run deploy astar-solver --source . --region europe-north1 --allow-unauthenticated --memory 1Gi --timeout 300 --set-env-vars ASTAR_TOKEN=<token>`
