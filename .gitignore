@@ -14,6 +14,7 @@ venv/
 # Data (logged API responses — large, local only)
 data/
 !data/.gitkeep
+!data/spatial_model.pkl
 
 # IDE
 .vscode/

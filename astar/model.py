@@ -414,47 +414,242 @@ def observation_calibrated_transitions(round_id: str, round_detail: dict,
     return blended / row_sums
 
 
+def _detect_round_activity(calibrated_trans: np.ndarray | None) -> float:
+    """
+    Detect how "active" a round is compared to historical averages.
+    Returns a divergence score: 0 = matches historical, higher = more different.
+    Used to decide whether to trust the spatial model (trained on historical data)
+    or lean more on round-specific calibrated transitions.
+    """
+    if calibrated_trans is None:
+        return 0.0
+
+    # Compare key transition rates to historical
+    # Empty→Empty and Forest→Forest are the most informative
+    ee_hist = HISTORICAL_TRANSITIONS[0, 0]  # ~0.865
+    ff_hist = HISTORICAL_TRANSITIONS[4, 4]  # ~0.794
+    ee_obs = calibrated_trans[0, 0]
+    ff_obs = calibrated_trans[4, 4]
+
+    # Divergence: how much lower are the stability rates?
+    # Lower = more active round (more expansion/colonization)
+    ee_div = max(0, ee_hist - ee_obs) / ee_hist
+    ff_div = max(0, ff_hist - ff_obs) / ff_hist
+    return (ee_div + ff_div) / 2.0
+
+
+def _proximity_conditioned_transitions(round_id: str, round_detail: dict,
+                                       map_w: int = 40, map_h: int = 40,
+                                       smoothing: float = 0.5) -> tuple | None:
+    """
+    Build distance-binned, forest-conditioned transition matrices from observations.
+    Returns (bin_trans_near_forest, bin_trans_far_forest, DIST_BINS, SIGMA, FOREST_THRESH)
+    or None if no observations.
+    """
+    from scipy.ndimage import distance_transform_edt
+
+    DIST_BINS = [0, 2, 4, 7, 999]
+    n_bins = len(DIST_BINS) - 1
+    SIGMA = 1.5
+    FOREST_THRESH = 3.0
+
+    n_seeds = len(round_detail.get("initial_states", []))
+    states = round_detail["initial_states"]
+
+    nf_counts = [np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.float64) for _ in range(n_bins)]
+    ff_counts = [np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.float64) for _ in range(n_bins)]
+    total_obs = 0
+
+    for seed_idx in range(n_seeds):
+        sims = load_simulations(round_id, seed_idx)
+        if not sims:
+            continue
+        init_grid = states[seed_idx]["grid"]
+        cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                              for x in range(map_w)] for y in range(map_h)])
+        sett_mask = (cls_grid == 1) | (cls_grid == 2)
+        forest_mask = (cls_grid == 4)
+        dist_sett = distance_transform_edt(~sett_mask) if sett_mask.any() else np.full((map_h, map_w), 999.0)
+        dist_forest = distance_transform_edt(~forest_mask) if forest_mask.any() else np.full((map_h, map_w), 999.0)
+
+        for sim in sims:
+            req = sim["request"]
+            resp = sim["response"]
+            vx, vy = req["viewport_x"], req["viewport_y"]
+            for dy, row in enumerate(resp["grid"]):
+                for dx, terrain_code in enumerate(row):
+                    iy, ix = vy + dy, vx + dx
+                    if iy >= map_h or ix >= map_w:
+                        continue
+                    init_cls = cls_grid[iy, ix]
+                    final_cls = TERRAIN_TO_CLASS.get(terrain_code, 0)
+                    d = dist_sett[iy, ix]
+                    df = dist_forest[iy, ix]
+                    for b in range(n_bins):
+                        if DIST_BINS[b] <= d < DIST_BINS[b + 1]:
+                            if df <= FOREST_THRESH:
+                                nf_counts[b][init_cls, final_cls] += 1
+                            else:
+                                ff_counts[b][init_cls, final_cls] += 1
+                            break
+                    total_obs += 1
+
+    if total_obs == 0:
+        return None
+
+    nf_trans = []
+    ff_trans = []
+    for b in range(n_bins):
+        prior = HISTORICAL_TRANSITIONS * smoothing
+        nft = (prior + nf_counts[b]) / np.maximum((prior + nf_counts[b]).sum(axis=1, keepdims=True), 1e-10)
+        fft = (prior + ff_counts[b]) / np.maximum((prior + ff_counts[b]).sum(axis=1, keepdims=True), 1e-10)
+        nf_trans.append(nft)
+        ff_trans.append(fft)
+
+    return nf_trans, ff_trans, DIST_BINS, SIGMA, FOREST_THRESH
+
+
+def _cell_observation_frequencies(round_id: str, round_detail: dict,
+                                  seed_index: int,
+                                  map_w: int = 40, map_h: int = 40) -> tuple:
+    """
+    Build per-cell empirical observation distributions for one seed.
+    Returns (obs_freq, obs_count) arrays of shape (H,W,C) and (H,W).
+    """
+    sims = load_simulations(round_id, seed_index)
+    obs_freq = np.zeros((map_h, map_w, NUM_CLASSES), dtype=np.float64)
+    obs_count = np.zeros((map_h, map_w), dtype=np.float64)
+
+    for sim in sims:
+        req = sim["request"]
+        resp = sim["response"]
+        vx, vy = req["viewport_x"], req["viewport_y"]
+        for dy, row in enumerate(resp["grid"]):
+            for dx, terrain_code in enumerate(row):
+                iy, ix = vy + dy, vx + dx
+                if iy >= map_h or ix >= map_w:
+                    continue
+                final_cls = TERRAIN_TO_CLASS.get(terrain_code, 0)
+                obs_freq[iy, ix, final_cls] += 1.0
+                obs_count[iy, ix] += 1.0
+
+    return obs_freq, obs_count
+
+
 def build_prediction(round_id: str, round_detail: dict, seed_index: int,
                      map_w: int = 40, map_h: int = 40) -> np.ndarray:
     """
-    Full prediction pipeline:
-      1. Spatial model prior (if available) OR historical transition prior
-      2. Round-specific transition calibration from observations (all seeds)
-      3. Blend spatial + calibrated transitions
-      4. Floor enforcement
-
-    Key design: observations calibrate the transition matrix (round-level),
-    NOT individual cells. This avoids overconfident single-observation updates
-    that were shown to hurt score in R5 testing.
+    Full prediction pipeline with adaptive round dynamics detection:
+      1. Spatial model prior (if available)
+      2. Round-specific transition calibration from observations
+      3. Detect round activity level and adapt blending strategy:
+         - Normal rounds (activity < 0.10): alpha=0.85, global transitions
+         - Active rounds (activity >= 0.10): per-class alpha, proximity-conditioned
+      4. Cell-level observation blending (conservative 10%)
+      5. Floor enforcement
 
     Returns: (H, W, 6) probability tensor ready for submission.
     """
+    from scipy.ndimage import distance_transform_edt
+
     # 1. Spatial model prior
     sp = spatial_prior(round_detail, seed_index, map_w, map_h)
 
-    # 2. Round-calibrated transitions from observations
+    # 2. Round-calibrated transitions
     calibrated_trans = observation_calibrated_transitions(
         round_id, round_detail, map_w, map_h)
 
-    if calibrated_trans is not None:
-        trans_prior = _apply_transition_matrix(
-            round_detail, seed_index, calibrated_trans, map_w, map_h)
-    else:
-        trans_prior = _apply_transition_matrix(
-            round_detail, seed_index, HISTORICAL_TRANSITIONS, map_w, map_h)
+    # 3. Detect round activity
+    activity = _detect_round_activity(calibrated_trans)
 
-    # 3. Blend spatial model with transition prior
-    if sp is not None:
-        # Spatial model is the dominant predictor. Transitions provide a
-        # safety net for out-of-distribution rounds. Alpha=0.85 backtested
-        # across R1-R5 as near-optimal.
-        alpha = 0.85
-        pred = alpha * sp + (1.0 - alpha) * trans_prior
-        pred = pred / pred.sum(axis=-1, keepdims=True)
-    else:
-        pred = trans_prior
+    if activity >= 0.10 and calibrated_trans is not None:
+        # HIGH-ACTIVITY ROUND: use proximity-conditioned transitions + per-class alpha
+        # R6 showed that spatial model trained on calmer rounds underestimates expansion.
+        CLASS_ALPHAS = {0: 0.3, 1: 0.1, 2: 0.0, 3: 0.0, 4: 0.1, 5: 0.0}
+        OBS_WEIGHT = 0.10
 
-    # 4. Floor enforcement
+        prox = _proximity_conditioned_transitions(
+            round_id, round_detail, map_w, map_h, smoothing=0.5)
+
+        if prox is not None:
+            nf_trans, ff_trans, DIST_BINS, SIGMA, FOREST_THRESH = prox
+            n_bins = len(DIST_BINS) - 1
+            bin_centers = [(DIST_BINS[b] + min(DIST_BINS[b + 1], 20)) / 2.0
+                           for b in range(n_bins)]
+
+            init_grid = round_detail["initial_states"][seed_index]["grid"]
+            cls_grid = np.array([[TERRAIN_TO_CLASS.get(init_grid[y][x], 0)
+                                  for x in range(map_w)] for y in range(map_h)])
+            sett_mask = (cls_grid == 1) | (cls_grid == 2)
+            forest_mask = (cls_grid == 4)
+            dist_sett = distance_transform_edt(~sett_mask) if sett_mask.any() \
+                else np.full((map_h, map_w), 999.0)
+            dist_forest = distance_transform_edt(~forest_mask) if forest_mask.any() \
+                else np.full((map_h, map_w), 999.0)
+
+            pred = np.zeros((map_h, map_w, NUM_CLASSES), dtype=np.float64)
+            for y in range(map_h):
+                for x in range(map_w):
+                    init_cls = cls_grid[y, x]
+                    d = dist_sett[y, x]
+                    df = dist_forest[y, x]
+
+                    # Distance-weighted transition (smooth interpolation)
+                    weights = np.array([np.exp(-((d - c) / SIGMA) ** 2)
+                                        for c in bin_centers])
+                    weights /= weights.sum()
+
+                    if df <= FOREST_THRESH:
+                        tp = sum(w * nf_trans[b][init_cls]
+                                 for b, w in enumerate(weights))
+                    else:
+                        tp = sum(w * ff_trans[b][init_cls]
+                                 for b, w in enumerate(weights))
+
+                    alpha = CLASS_ALPHAS.get(init_cls, 0.2)
+                    if sp is not None and alpha > 0:
+                        pred[y, x] = alpha * sp[y, x] + (1.0 - alpha) * tp
+                    else:
+                        pred[y, x] = tp
+
+            pred = pred / np.maximum(pred.sum(axis=-1, keepdims=True), 1e-10)
+        else:
+            # Fallback if proximity computation fails
+            trans_prior = _apply_transition_matrix(
+                round_detail, seed_index, calibrated_trans, map_w, map_h)
+            if sp is not None:
+                pred = 0.25 * sp + 0.75 * trans_prior
+                pred = pred / pred.sum(axis=-1, keepdims=True)
+            else:
+                pred = trans_prior
+            OBS_WEIGHT = 0.10
+
+        # Cell-level observation blending
+        obs_freq, obs_count = _cell_observation_frequencies(
+            round_id, round_detail, seed_index, map_w, map_h)
+        mask = obs_count > 0
+        if mask.any() and OBS_WEIGHT > 0:
+            obs_dist = np.zeros_like(obs_freq)
+            obs_dist[mask] = obs_freq[mask] / obs_count[mask, None]
+            pred[mask] = (1 - OBS_WEIGHT) * pred[mask] + OBS_WEIGHT * obs_dist[mask]
+
+    else:
+        # NORMAL ROUND: spatial model dominant, global transitions
+        if calibrated_trans is not None:
+            trans_prior = _apply_transition_matrix(
+                round_detail, seed_index, calibrated_trans, map_w, map_h)
+        else:
+            trans_prior = _apply_transition_matrix(
+                round_detail, seed_index, HISTORICAL_TRANSITIONS, map_w, map_h)
+
+        if sp is not None:
+            alpha = 0.85
+            pred = alpha * sp + (1.0 - alpha) * trans_prior
+            pred = pred / pred.sum(axis=-1, keepdims=True)
+        else:
+            pred = trans_prior
+
+    # Floor enforcement
     return apply_floor(pred)
 
 

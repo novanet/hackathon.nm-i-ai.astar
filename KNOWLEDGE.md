@@ -97,6 +97,9 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R1-R5] Distance-to-settlement features are the biggest spatial signal — empty cells near settlements behave very differently from isolated ones.
 - [R1-R5] Pure spatial model (alpha=1.0) scores 81.7 on R5 vs 77.6 with 60/40 blend — transitions dilute spatial accuracy.
 - [R1-R5] Alpha=0.85 is the best blend: marginal safety net from transitions (+0.7 total) without much spatial dilution.
+- [R6] **Alpha is round-dependent**: 0.85 is good for "normal" rounds but catastrophic for high-activity rounds. Use observations to calibrate alpha per round.
+- [R6] Proximity-conditioned transitions (near/far settlement) capture key spatial patterns without relying on pre-trained model.
+- [R6] 10% cell-level obs blending consistently helps on top of any base model (biased proxy metric, but directionally correct).
 
 ## Per-Round Notes
 
@@ -166,3 +169,25 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Key insight**: ~~Bayesian observation updates with PRIOR_STRENGTH=20 pull predictions slightly worse than pure spatial prior. Consider increasing prior_strength or skipping observations when spatial model is confident.~~ Switched to round-level transition calibration instead of cell-level Bayesian updates. Cell-level updates hurt because single observations override a strong spatial prior.
 - [R5] Oracle transition matrix: Empty→Empty 85.4%, Set→Set 32.7%, For→For 76.9% — close to historical avg
 - [R5] Mean entropy: 0.482, 78.7% dynamic cells
+
+### Round 6
+- Round ID: ae78003a-4efe-425a-881a-d16a39bca0ad
+- Round weight: 1.34 (1.05^6)
+- Map: 40x40, 5 seeds, 39-56 initial settlements per seed
+- 50/50 queries used (45 grid + 5 repeat on center viewport)
+- **Score: TBD** (round still active)
+- **HIGH-ACTIVITY ROUND**: drastically different from historical averages
+  - Empty→Empty: 69.5% (vs historical 86.5%) — massive expansion
+  - Forest→Forest: 53.4% (vs historical 79.4%) — heavy colonization
+  - Settlement→Settlement: 39.5% (vs historical 28.2%) — more stable
+  - Empty→Settlement: 20.8% (vs historical 9.0%) — very aggressive expansion
+  - Forest→Settlement: 26.9% (vs historical 11.2%)
+- **Repeat observations**: only 42-49% of cells match between two independent simulations — extremely stochastic
+- **Key finding: alpha=0.85 is WRONG for this round**. Spatial model trained on calmer rounds massively underpredicts expansion.
+  - Alpha sweep: optimal alpha = 0.20-0.25 (not 0.85)
+  - Per-class alpha: Empty=0.3, Settlement=0.1, Port=0.0, Forest=0.1, Mountain=0.0
+- **Proximity matters**: Empty cells near settlements (dist≤3) have 26.4% chance of becoming settlement vs 14.2% for far cells
+- **Best approach**: Hybrid model — proximity-conditioned transitions (near/far) + per-class spatial blend + 10% cell-level obs blending
+  - Hybrid: avg_ll=-0.750, vs Per-class=-0.759, Global=-0.760, Proximity-only=-0.763, Pure-transitions=-0.774
+- 8 submission passes: baseline → obs-calibrated → alpha=0.2 → alpha=0.25+obs → per-class alpha → proximity → hybrid (FINAL)
+- **Takeaway**: When round dynamics differ from training data, reduce spatial model weight and rely more on round-specific calibrated transitions
