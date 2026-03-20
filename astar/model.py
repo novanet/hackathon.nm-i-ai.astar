@@ -721,6 +721,11 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
         trans = debiased_trans if debiased_trans is not None else HISTORICAL_TRANSITIONS
         pred = _apply_transition_matrix(round_detail, seed_index, trans, map_w, map_h)
 
+    # 5b. Post-model calibration: correct systematic Settlement/Port/Ruin overestimation
+    #     Model consistently over-predicts S/P/R and under-predicts E (verified in LORO audit)
+    pred = pred * CALIBRATION_FACTORS[np.newaxis, np.newaxis, :]
+    pred = pred / pred.sum(axis=-1, keepdims=True)
+
     # 6. Adaptive per-class temperature scaling
     #    Detect collapse rounds (S→S < 0.15) and use softer temps for settlements
     ss_rate = round_feats[1]  # S→S feature
@@ -739,9 +744,14 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
 
 TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
 
-# Per-class temperature: calibrated via LORO. S/P/R need sharpening, E/F need softening.
+# Per-class temperature: calibrated via LORO. E/W need slight softening.
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 PER_CLASS_TEMPS = np.array([1.20, 1.0, 1.0, 1.0, 1.20, 1.0])
+
+# Post-model calibration: correct systematic S/P/R overestimation, E underestimation
+# Model consistently over-predicts settlement/port/ruin by 13-54%, under-predicts empty by 3-5%
+# Validated via LORO: ew=0.25 + S/P/R 0.92 gives best LORO (80.66, Δ=+0.88)
+CALIBRATION_FACTORS = np.array([1.03, 0.92, 0.92, 0.92, 1.0, 1.0])
 
 
 def temperature_scale(pred: np.ndarray, T: float | None = None) -> np.ndarray:

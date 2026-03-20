@@ -102,10 +102,15 @@ def compute_gt_round_features(detail: dict, gts: list[np.ndarray]) -> np.ndarray
     ], dtype=np.float64)
 
 
-def build_training_data_multi(round_ids: dict[int, str]):
-    """Build feature matrix X and target matrix Y from multiple rounds."""
+ENTROPY_WEIGHT_POWER = 0.25  # entropy^power weighting for training samples
+
+def build_training_data_multi(round_ids: dict[int, str], compute_weights: bool = False):
+    """Build feature matrix X and target matrix Y from multiple rounds.
+    If compute_weights=True, also return entropy-based sample weights.
+    """
     X_parts = []
     Y_parts = []
+    W_parts = []
     round_labels = []  # track which round each sample came from
 
     for rnum, rid in sorted(round_ids.items()):
@@ -125,11 +130,17 @@ def build_training_data_multi(round_ids: dict[int, str]):
                                              round_features=round_feats)
             X_parts.append(features.reshape(-1, features.shape[-1]))
             Y_parts.append(gt.reshape(-1, gt.shape[-1]))
+            if compute_weights:
+                # Entropy of GT distribution per cell — high-entropy cells matter more for scoring
+                p = np.clip(gt, 1e-10, 1.0)
+                entropy = -np.sum(p * np.log(p), axis=-1).flatten()
+                W_parts.append(np.power(entropy + 0.01, ENTROPY_WEIGHT_POWER))
             round_labels.extend([(rnum, seed_idx)] * (map_w * map_h))
 
     X = np.vstack(X_parts)
     Y = np.vstack(Y_parts)
-    return X, Y, round_labels
+    W = np.concatenate(W_parts) if compute_weights else None
+    return X, Y, round_labels, W
 
 
 def train_and_evaluate():
@@ -154,7 +165,7 @@ def train_and_evaluate():
     for test_rnum in sorted(all_data.keys()):
         # Train on all other rounds
         train_ids = {r: ROUND_IDS[r] for r in all_data if r != test_rnum}
-        X_train, Y_train, _ = build_training_data_multi(train_ids)
+        X_train, Y_train, _, W_train = build_training_data_multi(train_ids, compute_weights=True)
 
         model = MultiOutputRegressor(
             lgb.LGBMRegressor(
@@ -165,7 +176,7 @@ def train_and_evaluate():
             ),
             n_jobs=1,
         )
-        model.fit(X_train, Y_train)
+        model.fit(X_train, Y_train, sample_weight=W_train)
 
         # Test on held-out round
         test_rid, test_detail, test_gts = all_data[test_rnum]
@@ -239,9 +250,10 @@ def train_and_evaluate():
         print(f"    R{rnum}: avg={np.mean(scores):.2f}")
 
     # ── Train final model on ALL rounds ──
-    print("\n=== TRAINING FINAL MODEL (all rounds) ===")
-    X, Y, _ = build_training_data_multi(ROUND_IDS)
+    print("\n=== TRAINING FINAL MODEL (all rounds, entropy-weighted) ===")
+    X, Y, _, W = build_training_data_multi(ROUND_IDS, compute_weights=True)
     print(f"  Training on {X.shape[0]} samples, {X.shape[1]} features")
+    print(f"  Entropy weight power: {ENTROPY_WEIGHT_POWER}")
 
     final_model = MultiOutputRegressor(
         lgb.LGBMRegressor(
@@ -252,7 +264,7 @@ def train_and_evaluate():
         ),
         n_jobs=1,
     )
-    final_model.fit(X, Y)
+    final_model.fit(X, Y, sample_weight=W)
 
     MODEL_PATH.write_bytes(pickle.dumps(final_model))
     print(f"  Model saved to {MODEL_PATH}")

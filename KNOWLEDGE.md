@@ -340,3 +340,17 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **Observation blending tested and REJECTED**: Blending spatial model with per-cell observation frequencies (Bayesian, MODEL_STRENGTH=3) made ALL rounds worse (-0.5 to -10 pts). Observations are single stochastic runs, not probability distributions. The spatial model already captures the distribution; blending with individual outcomes adds noise.
 - **Temperature sweep**: Monotonic trend — softer is better for V4. Sharpening S/F/P (old T=0.80) actively hurts. E/W softening (T=1.20) adds +0.17 pts over T=1.15.
 - **R9 weight**: 1.05^9 = 1.55. Raw ~90 needed to compete with leader (140.30). Realistic target: 80-85 raw → 124-132 weighted.
+
+### Model V5: Entropy-Weighted Training + Calibration (post-R8)
+- **Change 1: Entropy-weighted training** (ENTROPY_WEIGHT_POWER=0.25): Training samples weighted by GT entropy^0.25. High-entropy cells (settlement/forest boundaries) dominate the scoring function (88-99% of loss), but MSE training treats all cells equally. Weighting forces the model to focus on cells that matter for the score.
+- **Change 2: Post-model calibration** (CALIBRATION_FACTORS=[1.03, 0.92, 0.92, 0.92, 1.0, 1.0]): Model systematically over-predicts Settlement (+13-54%), Port (+45-4600%), Ruin (+37-85%), and under-predicts Empty (-3-7%). Applied per-class multiplicative correction after spatial model, before temperature scaling. Bias is consistent across ALL 8 rounds.
+- **LORO (with temps + calibration)**: 80.66 (was 79.78 baseline with temps, or 78.05 raw). Total improvement: **+0.88 vs V4** with temps.
+  - Entropy weighting alone (power=0.25): +0.64 LORO
+  - Calibration alone: +0.05-0.14 LORO (marginal)
+  - Combined: +0.88 LORO (synergistic)
+- **LORO raw (no temps, from train_spatial.py)**: 79.67 (was 78.05 in V4 — +1.62 from entropy weighting)
+- **Entropy weight sweep**: power=0.15: +0.22, 0.25: +0.64, 0.35: +0.59, 0.50: +0.77, 0.75: +0.60, 1.0: +0.35, 2.0: -1.87. Sweet spot 0.25-0.50. Chose 0.25 for conservative, stable per-round distribution.
+- **Calibration sweep**: S/P/R 0.92 + E 1.03 was optimal in LORO. S/P/R 0.95/0.90 also tested. Port-specific calibration (0.80) marginally better (+0.14).
+- **Log-target training REJECTED**: Training on log(p) targets catastrophically failed (LORO -21.10 pts). MSE is better.
+- **Key insight**: The scoring formula (entropy-weighted KL) means high-entropy cells contribute disproportionately. Training with entropy weights aligns the loss function with the scoring metric.
+- **Key insight**: The calibration bias is a property of the model architecture (LightGBM with regularization pushes predictions toward minority classes), not the data. It persists across all rounds and all training sets.
