@@ -21,7 +21,7 @@ from .replay import (
     build_observation_grid, build_empirical_distribution,
 )
 
-PROB_FLOOR = 0.0002
+PROB_FLOOR = 0.0001
 
 # Historical transition matrix derived from all rounds backtesting.
 # Used as fallback when no observations are available for the current round.
@@ -36,15 +36,15 @@ HISTORICAL_TRANSITIONS = np.array([
     [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
 ])
 
-# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R8.
+# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R9 (6 obs rounds).
 # Multiplied with observed transitions to debias toward GT distribution.
 # Values >1 mean GT is higher than single-run observations (more stable).
 SHRINKAGE_MATRIX = np.array([
-    [1.0410, 0.8048, 1.0383, 0.7179, 0.8362, 1.0000],  # Empty →
-    [1.0407, 0.9193, 1.9426, 0.8194, 1.0567, 1.0000],  # Settlement →
-    [1.3142, 0.8416, 0.4938, 1.2387, 1.4709, 1.0000],  # Port →
+    [1.0029, 0.9768, 1.1921, 0.8922, 0.9346, 1.0000],  # Empty →
+    [0.9698, 1.0375, 1.2656, 0.8710, 0.9846, 1.0000],  # Settlement →
+    [1.0128, 0.6722, 0.5610, 0.4733, 0.8608, 1.0000],  # Port →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Ruin →
-    [0.8973, 0.7965, 1.0213, 0.6904, 1.0653, 1.0000],  # Forest →
+    [1.0726, 1.0096, 0.9197, 0.8997, 0.9962, 1.0000],  # Forest →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Mountain →
 ])
 
@@ -793,8 +793,8 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
     #    Detect collapse rounds (S→S < 0.15) and use softer temps for settlements
     ss_rate = round_feats[1]  # S→S feature
     if ss_rate < 0.15:
-        # Collapse round: settlements dying — don't sharpen, soften instead
-        adaptive_temps = np.array([1.15, 1.15, 1.15, 1.0, 1.15, 1.0])
+        # Collapse round: minimal softening (T=1.05 optimal from sweep)
+        adaptive_temps = np.array([1.05, 1.05, 1.05, 1.0, 1.05, 1.0])
     else:
         adaptive_temps = PER_CLASS_TEMPS
     pred = per_class_temperature_scale(pred, round_detail, seed_index,
@@ -807,14 +807,13 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
 
 TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
 
-# Per-class temperature: calibrated via LORO. E/W need slight softening.
+# Per-class temperature: calibrated via full pipeline sweep on R1-R9.
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
-PER_CLASS_TEMPS = np.array([1.20, 1.0, 1.0, 1.0, 1.20, 1.0])
+PER_CLASS_TEMPS = np.array([1.15, 1.0, 1.1, 1.0, 1.15, 1.0])
 
-# Post-model calibration: correct systematic S/P/R overestimation, E underestimation
-# Model consistently over-predicts settlement/port/ruin by 13-54%, under-predicts empty by 3-5%
-# Validated via LORO: ew=0.25 + S/P/R 0.92 gives best LORO (80.66, Δ=+0.88)
-CALIBRATION_FACTORS = np.array([1.03, 0.92, 0.92, 0.92, 1.0, 1.0])
+# Post-model calibration: pipeline sweep on R1-R9 found minimal calibration optimal.
+# E slightly reduced (0.98), F slightly reduced (0.95), S/P/R at 1.0.
+CALIBRATION_FACTORS = np.array([0.98, 1.0, 1.0, 1.0, 0.95, 1.0])
 
 
 def temperature_scale(pred: np.ndarray, T: float | None = None) -> np.ndarray:
