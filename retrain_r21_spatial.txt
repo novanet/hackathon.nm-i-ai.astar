@@ -1,0 +1,14 @@
+=== LOADING ALL ROUND DATA ===
+  R1: 5 seeds, map 40x40
+  R2: 5 seeds, map 40x40
+  R3: 5 seeds, map 40x40
+  R4: 5 seeds, map 40x40
+  R5: 5 seeds, map 40x40
+  R6: 5 seeds, map 40x40
+  R7: 5 seeds, map 40x40
+  R8: 5 seeds, map 40x40
+  R9: 5 seeds, map 40x40
+  R10: 5 seeds, map 40x40
+  R11: 5 seeds, map 40x40
+  R12: 5 seeds, map 40x40
+  R13: 5 seeds, map 40x40

@@ -1,8 +1,9 @@
 # Plan 95 — Breaking the 95 Raw Score Barrier
 
 **Date**: 2026-03-22  
-**Current peak raw**: 92.53 (R15)  
-**Current LORO**: GBM+MLP=84.08, U-Net+TTA=83.75, Blend(90%)≈87–88  
+**Status**: ❌ CONCLUDED — V1 architecture confirmed optimal, no path to 95 found  
+**Current peak raw**: 94.84 (R19) — our best ever  
+**Current LORO (R1-R20)**: GBM+MLP=84.39/84.52, U-Net+TTA=85.88, Blend(90%)≈88–89  
 **Target**: 95+ raw on a single round  
 **Scoring math**: `score = 100 × exp(-3 × wKL)` → 95 requires `wKL ≤ 0.0171` (vs ~0.026 at 92.5 = **34% reduction**)
 
@@ -20,14 +21,16 @@
 | In-sample backtest (R8) | 95.7 | The dynamics allow 95+ — the model just needs to generalize |
 | Leader's implied peak | ~94.8 | **Someone is already there.** We need to match them. |
 
-The gap is 2.5 pts. Our in-sample backtests already hit 95.7. The U-Net LORO≈in-sample (underfitting). A bigger model closes this.
+~~The gap is 2.5 pts. Our in-sample backtests already hit 95.7. The U-Net LORO≈in-sample (underfitting). A bigger model closes this.~~
 
-**The three things that move the ceiling:**
-1. **Bigger U-Net + FiLM** — closes the generalization gap (largest single lever, +1-2 pts)
-2. **Better training** — OneCycle + mixup + label smoothing squeeze more from the architecture (+0.5-1)
-3. **Nail feature estimation** — repeat queries cut S→S noise from 0.014 → 0.007 (+0.3-0.7)
+**VERDICT (post-experiment)**: The underfitting hypothesis was **WRONG**. V2_big (4.3M params, 3-level, 48ch) scored LORO 83.63 — **worse than V1** (85.88 on R1-R20). More capacity hurts with only 20 rounds of data. R19 hit 94.84 with V1, proving the ceiling is already near-optimal for our data regime.
 
-**Strategy**: Go all-in on U-Net architecture. The blend gate helps the floor, not the ceiling. On a favorable round with an upgraded U-Net, 95 is reachable.
+~~**The three things that move the ceiling:**~~
+~~1. **Bigger U-Net + FiLM** — closes the generalization gap (largest single lever, +1-2 pts)~~
+~~2. **Better training** — OneCycle + mixup + label smoothing squeeze more from the architecture (+0.5-1)~~
+~~3. **Nail feature estimation** — repeat queries cut S→S noise from 0.014 → 0.007 (+0.3-0.7)~~
+
+**What actually matters**: More training data (each new round adds ~+0.3–0.9 LORO pts) and getting lucky with round dynamics (collapse rounds = easy 94+ with current V1).
 
 ---
 
@@ -308,14 +311,114 @@ This shrinks noisy per-round observations toward the historical average, with ad
 
 ---
 
-## Execute Now (Ordered for Maximum Peak)
+## Flagship Configs — Running on VM (`train_big_unet.py`)
 
-1. **Upgrade U-Net architecture** — 3 encoder levels (48→96→192→384), FiLM conditioning, attention gates. This is the highest-ceiling change and the only one that structurally raises the peak. Do this FIRST.
-2. **Upgrade training regime** — OneCycle LR (peak 3e-3), 10-epoch warmup, mixup augmentation (λ~Beta(0.2,0.2)), label smoothing (α=0.01), 500 epochs patience=50. Squeezes more from the bigger architecture.
-3. **Run full LORO + blend sweep** — Validates the new U-Net and finds the optimal blend weight. Also gives us the baseline delta.
-4. **Restructure queries for tighter feature estimation** — 7 viewports + 3 center repeats per seed. Cuts S→S noise by 2×.
-5. **Deploy + resubmit R15** — If LORO validates ≥2 pts gain, resubmit R15 immediately for guaranteed weighted-score improvement. Then deploy for the next live round.
-6. **Adaptive blend gate** — Ship after U-Net is validated. Nice-to-have for floor, not the ceiling driver.
+**Status**: ✅ COMPLETED (V2_big only — killed before remaining configs)  
+**Script**: `train_big_unet.py` — full LORO on R1-R18, 300 epochs, patience=40  
+**Result**: V2_big LORO = **83.63** avg (18 rounds, 9255s) — **WORSE than V1 (85.88 on R1-R20)**
+
+### The Four Configs
+
+| Config | Base Ch | Levels | Params | FiLM | Attention | Dropout | Mixup | Label Smooth | OneCycle | What it tests |
+|--------|---------|--------|--------|------|-----------|---------|-------|-------------|----------|---------------|
+| **V2_big** | 48 | 3 | ~4.3M | No | No | 0.15 | No | 0 | No | Pure scale-up (A1 only) |
+| **V2_big_mix** | 48 | 3 | ~4.3M | No | No | 0.15 | Yes | 0.01 | Yes | Scale-up + training upgrades (A1+A4) |
+| **V2_film** | 48 | 3 | ~4.3M | **Yes** | **Yes** | 0.15 | Yes | 0.01 | Yes | Full plan-95 stack (A1+A2+A3+A4) |
+| **V2_huge** | 64 | 3 | ~7.6M | **Yes** | **Yes** | 0.15 | Yes | 0.01 | Yes | Maximum capacity flagship |
+
+### Architecture Details
+
+**V2_big / V2_big_mix** (no FiLM — 19 input channels):
+```
+Encoder:   48(40×40) → 96(20×20) → 192(10×10) → [bottleneck 384(5×5)]
+Decoder:   384(5×5) → 192(10×10) → 96(20×20) → 48(40×40) → 6(40×40)
+Input:     19ch (11 spatial + 8 round broadcast)
+```
+
+**V2_film** (FiLM + attention — 11 input channels + round features via FiLM):
+```
+Encoder:   48(40×40) → 96(20×20) → 192(10×10) → [bottleneck 384(5×5)]
+Decoder:   384(5×5) → 192(10×10) → 96(20×20) → 48(40×40) → 6(40×40)
+Input:     11ch spatial only — round features modulate via FiLM after each DoubleConv
+Skip:      Attention gates on all skip connections
+```
+
+**V2_huge** (same as V2_film, wider):
+```
+Encoder:   64(40×40) → 128(20×20) → 256(10×10) → [bottleneck 512(5×5)]
+Decoder:   512(5×5) → 256(10×10) → 128(20×20) → 64(40×40) → 6(40×40)
+```
+
+### Training Settings (all configs)
+
+- **Epochs**: 300 (vs 150 in V1 comparison)
+- **Patience**: 40 (vs 25 in V1)
+- **LR**: 1e-3 (OneCycle peak: 3e-3)
+- **Weight decay**: 1e-4
+- **Batch size**: 16
+- **Augmentation**: D4 (8×) + optional mixup (λ~Beta(0.2, 0.2))
+- **Val split**: 90/10 random
+- **Loss**: entropy-weighted KL (matches competition scorer)
+
+### Comparison Baseline (also running on VM)
+
+`run_comparison.py` is finishing first — 4 smaller configs × 7 test rounds × 150 epochs:
+
+| Config | Params | Description |
+|--------|--------|-------------|
+| V1 | 471K | Current production baseline (2-level, 32ch) |
+| V1_mix | 471K | V1 + mixup + label smoothing + OneCycleLR |
+| V2_48_2l | ~1.05M | 2-level, 48ch (wider V1) |
+| V2_3l_32 | ~1.88M | 3-level, 32ch (deeper V1) |
+
+Partial results so far: V1 R1=85.02, R9=92.99, R12=53.70
+
+### Decision Matrix — RESOLVED
+
+| Outcome | Result |
+|---------|--------|
+| ~~V2_film or V2_huge beats V1 by ≥1 LORO pt~~ | ❌ V2_big already regressed — killed before V2_film/V2_huge ran |
+| ~~V2_big_mix beats V2_big~~ | ❌ Not tested — V2_big already lost |
+| ~~V2_big beats V2_big_mix~~ | N/A |
+| ~~V2_film beats V2_big_mix~~ | ❌ Not tested |
+| **All V2 configs regress vs V1** | **✅ YES — V2_big=83.63 vs V1=85.88. Abandoned path A.** |
+
+### V2_big Per-Round LORO Results
+
+| Round | V2_big | V1 (R1-R20) | Delta |
+|-------|--------|-------------|-------|
+| R1 | 81.31 | 87.92 | -6.61 |
+| R2 | 79.63 | 83.98 | -4.35 |
+| R3 | 88.12 | 85.72 | +2.40 |
+| R4 | 91.70 | 91.42 | +0.28 |
+| R5 | 85.65 | 84.49 | +1.16 |
+| R6 | 85.42 | 83.49 | +1.93 |
+| R7 | 74.31 | 71.05 | +3.26 |
+| R8 | 88.45 | 90.79 | -2.34 |
+| R9 | 93.21 | 92.04 | +1.17 |
+| R10 | 91.08 | 91.38 | -0.30 |
+| R11 | 80.69 | 79.31 | +1.38 |
+| R12 | 50.84 | 56.49 | -5.65 |
+| R13 | 92.07 | 93.89 | -1.82 |
+| R14 | 78.45 | 91.38 | -12.93 |
+| R15 | 92.74 | 94.06 | -1.32 |
+| R16 | 86.10 | 90.36 | -4.26 |
+| R17 | 85.86 | 92.13 | -6.27 |
+| R18 | 79.80 | 90.94 | -11.14 |
+| **Avg** | **83.63** | **85.88** | **-2.25** |
+
+**Analysis**: V2_big catastrophically regresses on R14 (-12.93) and R18 (-11.14) — rounds where the bigger model overfits to training distribution. Wins only on extreme/outlier rounds (R3, R7) where additional capacity helps represent unusual dynamics. Net loss far exceeds gains.
+
+---
+
+## Execute Now — FINAL STATUS
+
+1. ❌ **Upgrade U-Net architecture** — V2_big (3-level, 48ch, 4.3M params) LORO=83.63, WORSE than V1=85.88. **REJECTED.**
+2. ❌ **Upgrade training regime** — Not tested independently (V2_big already lost). Quick local comparison showed V1_mix ≈ V1 on 3-round subset. **NOT WORTH IT.**
+3. ✅ **LORO validated** — V1 remains best. Retrained on R1-R20: LORO 85.88 (+TTA). **SHIPPED.**
+4. ⬜ **Restructure queries** — Never implemented. Current 9-viewport grid + 1 repeat is good enough (R19=94.84, R20=90.65).
+5. ⬜ **Resubmit R15** — No LORO gain validated, so no resubmit.
+6. ⬜ **Adaptive blend gate** — Not implemented. Fixed 90% U-Net blend works well enough.
 
 ---
 
@@ -390,6 +493,14 @@ After each change, report:
 ```
 
 **Blend sweep after every U-Net change**: The optimal blend ratio may shift. Always sweep [50%, 60%, 70%, 80%, 90%, 100%] U-Net weight.
+
+### LORO Methodology Improvements
+
+1. **Per-seed std reporting** — `score_unet_on_round` already scores per-seed. Report std alongside mean to spot high-variance rounds (e.g., R12 likely has huge seed variance). High-variance rounds are where the model is most uncertain and where improvements matter most.
+
+2. **Weighted LORO** — Weight recent rounds higher: `weights = [1.05**i for i in range(n_rounds)]`. R15-R18 are more representative of future rounds than R1-R3 (the simulator may have evolved, and recent rounds share more similar hidden parameter distributions).
+
+3. **Bootstrap CIs on LORO avg** — Resample the 15 per-round scores with replacement 1000× to get a 95% CI. Helps decide if a +0.3 LORO improvement is signal or noise. Rule of thumb: if the CIs overlap, don't ship the change for that reason alone.
 
 ---
 

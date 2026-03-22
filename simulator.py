@@ -20,6 +20,8 @@ import numpy as np
 from pathlib import Path
 from typing import NamedTuple
 
+from astar.replay import load_ground_truth_array
+
 NUM_CLASSES = 6  # Empty, Settlement, Port, Ruin, Forest, Mountain
 CLASS_NAMES = ["Empty", "Settlement", "Port", "Ruin", "Forest", "Mountain"]
 TERRAIN_TO_CLASS = {10: 0, 11: 0, 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
@@ -303,12 +305,10 @@ def load_round_gt(round_id: str) -> tuple[dict, list[np.ndarray]]:
     
     gts = []
     for s in range(len(detail.get("initial_states", []))):
-        gt_path = rdir / f"ground_truth_s{s}.json"
-        if not gt_path.exists():
+        gt = load_ground_truth_array(round_id, s)
+        if gt is None:
             continue
-        gt_data = json.loads(gt_path.read_text(encoding="utf-8"))
-        gt_key = "ground_truth" if "ground_truth" in gt_data else "prediction"
-        gts.append(np.array(gt_data[gt_key], dtype=np.float64))
+        gts.append(gt)
     
     return detail, gts
 

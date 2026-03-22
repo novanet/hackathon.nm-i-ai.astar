@@ -144,17 +144,25 @@ def submit_all(round_id: str, detail: dict, n_seeds: int,
     """Submit predictions for all seeds. Returns responses."""
     print(f"\n=== Submitting ({label}) ===")
     results = []
+    errors = []
     for seed_idx in range(n_seeds):
         try:
             pred = build_prediction(round_id, detail, seed_idx, map_w, map_h)
+            # Validate prediction shape and values
+            assert pred.shape == (map_h, map_w, 6), f"Bad shape: {pred.shape}"
+            assert np.all(np.isfinite(pred)), "Non-finite values in prediction"
+            assert np.allclose(pred.sum(axis=-1), 1.0, atol=1e-3), "Probabilities don't sum to 1"
             resp = submit(round_id, seed_idx, prediction_to_list(pred))
-            status = resp.get("status", "?")
-            score = resp.get("score", "?")
+            status = resp.get("status", "?") if isinstance(resp, dict) else resp
+            score = resp.get("score", "?") if isinstance(resp, dict) else "?"
             print(f"  Seed {seed_idx}: {status} score={score}")
             results.append(resp)
         except Exception as e:
             print(f"  Seed {seed_idx}: ERROR - {e}")
             results.append({"status": "error", "error": str(e)})
+            errors.append((seed_idx, str(e)))
+    if errors:
+        print(f"\n  *** WARNING: {len(errors)}/{n_seeds} seeds failed! ***")
     return results
 
 
@@ -258,6 +266,23 @@ def main():
     # Save round detail
     rdir = DATA_DIR / f"round_{round_id}"
     rdir.mkdir(parents=True, exist_ok=True)
+
+    # === Pre-flight validation: test model pipeline BEFORE spending queries ===
+    print("\n=== Pre-flight validation ===")
+    try:
+        test_pred = build_prediction(round_id, detail, 0, map_w, map_h)
+        assert test_pred.shape == (map_h, map_w, 6), f"Bad shape: {test_pred.shape}"
+        assert np.all(np.isfinite(test_pred)), "Non-finite values"
+        assert np.allclose(test_pred.sum(axis=-1), 1.0, atol=1e-3), "Bad normalization"
+        # Check that we got meaningful variation (not all uniform)
+        max_prob = test_pred.max()
+        min_entropy = -np.sum(test_pred * np.log(test_pred + 1e-10), axis=-1).min()
+        print(f"  Prediction OK: shape={test_pred.shape}, max_p={max_prob:.4f}, min_H={min_entropy:.4f}")
+        del test_pred
+    except Exception as e:
+        print(f"  *** PREFLIGHT FAILED: {e} ***")
+        print("  Fix the model pipeline before proceeding!")
+        return
 
     # Check budget
     budget = get_budget()

@@ -482,7 +482,23 @@ def _load_unet_model():
         use_film=checkpoint.get("use_film", False),
         use_attention=checkpoint.get("use_attention", False),
     ).to(device)
-    model.load_state_dict(checkpoint["state_dict"])
+    sd = checkpoint["state_dict"]
+    # V1→V2 key migration: old enc1/enc2/up1/up2/dec1/dec2 → new encoders.N/ups.N/decoders.N
+    if any(k.startswith("enc1.") for k in sd):
+        n_levels = checkpoint.get("n_levels", 2)
+        new_sd = {}
+        for k, v in sd.items():
+            nk = k
+            for lvl in range(1, n_levels + 1):
+                nk = nk.replace(f"enc{lvl}.", f"encoders.{lvl - 1}.")
+            # Decoder indexed in reverse: up2/dec2→ups.0/decoders.0, up1/dec1→ups.1/decoders.1
+            for lvl in range(n_levels, 0, -1):
+                dec_idx = n_levels - lvl
+                nk = nk.replace(f"up{lvl}.", f"ups.{dec_idx}.")
+                nk = nk.replace(f"dec{lvl}.", f"decoders.{dec_idx}.")
+            new_sd[nk] = v
+        sd = new_sd
+    model.load_state_dict(sd)
     model.eval()
     _unet_model = model
     print("  [model] Loaded U-Net")

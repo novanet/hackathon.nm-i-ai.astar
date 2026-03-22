@@ -1,9 +1,9 @@
 """Quick: test different configs on R16 GT to find what actually works best now."""
 import numpy as np
-import json
 from pathlib import Path
 from astar.client import get_round_detail
 from astar.model import build_prediction
+from astar.replay import load_ground_truth_array
 from astar.submit import score_prediction
 import astar.model as m
 
@@ -12,8 +12,10 @@ DATA_DIR = Path("data") / f"round_{R16_ID}"
 
 
 def load_gt(seed_idx):
-    data = json.loads((DATA_DIR / f"ground_truth_s{seed_idx}.json").read_text())
-    return np.array(data["ground_truth"], dtype=np.float64)
+    gt = load_ground_truth_array(R16_ID, seed_idx)
+    if gt is None:
+        raise FileNotFoundError(f"Missing ground truth for seed {seed_idx} in {DATA_DIR}")
+    return gt
 
 
 def test_config(detail, n_seeds, label, bayes_min, bayes_max, floor, unet_w=None):

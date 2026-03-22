@@ -10,7 +10,7 @@ import numpy as np
 
 from .client import get_round_detail, submit
 from .model import build_prediction, prediction_to_list, apply_floor
-from .replay import load_analysis, NUM_CLASSES
+from .replay import load_ground_truth_array
 
 
 def score_prediction(prediction: np.ndarray, ground_truth: np.ndarray) -> float:
@@ -57,9 +57,8 @@ def submit_round(round_id: str, seeds: list[int] | None = None,
         pred = build_prediction(round_id, detail, seed_idx)
 
         # Local score if ground truth available
-        analysis = load_analysis(round_id, seed_idx)
-        if analysis and "ground_truth" in analysis:
-            gt = np.array(analysis["ground_truth"], dtype=np.float64)
+        gt = load_ground_truth_array(round_id, seed_idx)
+        if gt is not None:
             score = score_prediction(pred, gt)
             results[seed_idx] = score
             print(f"  Seed {seed_idx}: local score = {score:.2f}")

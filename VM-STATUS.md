@@ -9,6 +9,12 @@
 - **Python**: 3.11.2 in `/home/devstar17101/venv`
 - **Code**: `/home/devstar17101/app/`
 
+## Quick Status Check
+
+```bash
+gcloud compute ssh devstar17101@astar-sweep --zone=europe-north1-a --project=ai-nm26osl-1710 --command="tail -30 ~/app/big_unet_output.log"
+```
+
 ## Fetching Results
 
 ```bash
@@ -50,6 +56,31 @@ R1, R5, R9, R12, R15, R17, R18 (7 rounds, LORO leave-one-out)
 | V2_3l_32 | | | | | | | | — |
 
 *Update this table by running `python fetch_vm_results.py`*
+
+---
+
+## Queued Job: Big U-Net LORO (`train_big_unet.py`)
+
+**Queued**: 2026-03-22 ~02:22 UTC (starts after comparison finishes)  
+**Script**: `train_big_unet.py` — full LORO on ALL rounds × 4 big configs × 300 epochs  
+**Log**: `big_unet_output.log`
+
+### Configs Being Tested
+
+| Config | Params | Channels | Levels | FiLM | Attention | Mixup+LS+OneCycle |
+|--------|--------|----------|--------|------|-----------|-------------------|
+| V2_big | ~4.3M | 48 | 3 | No | No | No |
+| V2_big_mix | ~4.3M | 48 | 3 | No | No | Yes |
+| V2_film | ~4.3M | 48 | 3 | Yes | Yes | Yes |
+| V2_huge | ~7.6M | 64 | 3 | Yes | Yes | Yes |
+
+### Check progress
+
+```bash
+gcloud compute ssh devstar17101@astar-sweep --zone=europe-north1-a --project=ai-nm26osl-1710 --command="tail -30 ~/app/big_unet_output.log"
+```
+
+---
 
 ## VM Lifecycle
 

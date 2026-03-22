@@ -69,6 +69,8 @@ Critical learnings accumulated during the competition. Copilot should append fin
 ## Scoring & Prediction Insights
 
 - **LEADERBOARD FORMULA**: `leaderboard_score = max(round_score × round_weight)` across all rounds. Only your SINGLE BEST weighted result matters. Round weights = `1.05^round_number`. Missing rounds doesn't penalize — you just miss opportunities for a higher score.
+- [Round 21] Late-round weight now dominates raw peak: R21 raw 91.11 beat R19 raw 94.84 on weighted score (253.83 vs 239.64). Keep submitting every late round; a merely good late-round raw can still become the best leaderboard entry.
+- [Round 21 diagnostics] `ground_truth_s*.json` stores both `prediction` and `ground_truth`. Local validation must score against `ground_truth`; scoring against `prediction` creates bogus regressions. Correct R21 replay with current R1-R21 artifacts is spatial=92.20 and full=91.89.
 - **HOT STREAK**: Average of last 3 round scores is also tracked (separate from leaderboard). Unclear if this affects final ranking.
 - **ROUND SCORE**: Average of 5 per-seed scores. Unsubmitted seeds = 0. Always submit all 5.
 - **SCORE FORMULA**: `score = max(0, min(100, 100 × exp(-3 × weighted_kl)))` where weighted_kl = entropy-weighted average KL across dynamic cells only.
@@ -711,56 +713,198 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **What actually matters**: Peak raw score relative to the leader's peak raw score. Leader's 217.38 weighted ÷ their round weight = their best raw score. We need to OUTSCORE them on raw in the same round (or a round where they underperform).
 - **Our raw ceiling**: R9=90.6, R10=91.6, R13=90.1, R15=92.5. We can hit 90+ on favorable rounds. The leader likely hit ~93-95 raw on their best round. Gap is 1-3 raw points.
 - **Priority**: Maximize peak raw score through clean execution + retrained models. No experiments mid-round (R16 overlay change cost 15.5 raw points).
+- [R19] **Collapse rounds are now our strongest regime**: R19=94.84 raw — highest ever. With 5+ collapse rounds in training data (R3,R4,R8,R10,R19), the model has converged on this pattern. Low S→S rounds are low-entropy and predictable.
 
-### Multi-Round Retraining (R1-R17)
+### Multi-Round Retraining (R1-R19)
 
-**GBM+MLP LORO (R1-R17, 85 seeds, 136K cells):**
+**GBM+MLP LORO (R1-R19, 95 seeds, 152K cells):**
 | Round | Spatial | +Sim | Baseline |
 |-------|---------|------|----------|
-| R1 | 85.68 | 85.37 | 69.61 |
-| R2 | 89.48 | 89.85 | 73.35 |
-| R3 | 87.60 | 87.58 | 52.29 |
-| R4 | 90.33 | 90.67 | 87.17 |
-| R5 | 84.16 | 83.02 | 67.06 |
-| R6 | 84.30 | 84.28 | 52.70 |
-| R7 | 68.54 | 67.02 | 40.71 |
-| R8 | 81.90 | 87.77 | 75.07 |
-| R9 | 90.97 | 90.99 | 82.87 |
-| R10 | 91.19 | 91.26 | 65.89 |
-| R11 | 84.07 | 85.30 | 50.15 |
-| R12 | 58.34 | 56.48 | 24.09 |
-| R13 | 91.96 | 91.77 | 84.60 |
-| R14 | 80.21 | 79.18 | 38.62 |
-| R15 | 91.33 | 91.83 | 77.80 |
-| R16 | 83.01 | 82.50 | 75.35 |
-| R17 | 86.29 | 86.99 | 56.55 |
-| **Avg** | **84.08** | **84.23** | **63.17** |
+| R1 | 85.37 | 85.27 | 69.61 |
+| R2 | 89.62 | 89.98 | 73.35 |
+| R3 | 88.44 | 88.09 | 52.29 |
+| R4 | 89.98 | 90.45 | 87.17 |
+| R5 | 84.34 | 83.31 | 67.06 |
+| R6 | 84.08 | 84.06 | 52.70 |
+| R7 | 68.22 | 66.71 | 40.71 |
+| R8 | 84.72 | 90.20 | 75.07 |
+| R9 | 90.82 | 91.06 | 82.87 |
+| R10 | 90.34 | 90.28 | 65.89 |
+| R11 | 84.17 | 85.85 | 50.15 |
+| R12 | 56.15 | 54.29 | 24.09 |
+| R13 | 91.75 | 91.55 | 84.60 |
+| R14 | 80.51 | 79.48 | 38.62 |
+| R15 | 91.51 | 91.91 | 77.80 |
+| R16 | 83.04 | 82.44 | 75.35 |
+| R17 | 86.43 | 87.02 | 56.55 |
+| R18 | 72.85 | 74.69 | 25.58 |
+| R19 | 92.46 | 93.31 | 67.81 |
+| **Avg** | **83.94** | **84.21** | **61.43** |
 
-- Previous R1-R16 avg was spatial=83.31, +sim=83.62. Adding R17 improved avg by +0.77/+0.61.
-- R17 LORO: spatial=86.29, +sim=86.99 (strong out-of-sample performance)
+- Previous R1-R17 avg was spatial=84.08, +sim=84.23. Adding R18+R19 moved avg slightly: -0.14/-0.02
+- R18 LORO: spatial=72.85, +sim=74.69 — weakest recent round (low baseline=25.58)
+- R19 LORO: spatial=92.46, +sim=93.31 — strongest LORO score across all rounds
+- MLP val_kl improved: 0.03291 (was 0.03326 on R1-R17), early stop at epoch 175
+- Learned debiaser tested: ALL 16 LOO folds WORSE — confirmed NOT useful
 
-**U-Net LORO (R1-R17, 85 seeds, TTA):**
+**U-Net LORO (R1-R19, 95 seeds, TTA):**
 | Round | UNet | +TTA |
 |-------|------|------|
-| R1 | 80.18 | 81.60 |
-| R2 | 84.60 | 85.70 |
-| R3 | 87.91 | 88.29 |
-| R4 | 91.57 | 92.13 |
-| R5 | 83.47 | 83.95 |
-| R6 | 82.74 | 83.65 |
-| R7 | 71.71 | 73.36 |
-| R8 | 83.16 | 83.50 |
-| R9 | 92.81 | 93.27 |
-| R10 | 90.92 | 91.35 |
-| R11 | 82.32 | 83.69 |
-| R12 | 48.71 | 51.75 |
-| R13 | 92.14 | 92.70 |
-| R14 | 76.06 | 76.78 |
-| R15 | 91.07 | 92.04 |
-| R16 | 84.96 | 86.31 |
-| R17 | 82.31 | 83.71 |
-| **Avg** | **82.74** | **83.75** |
+| R1 | 78.98 | 80.74 |
+| R2 | 83.41 | 84.89 |
+| R3 | 87.15 | 87.35 |
+| R4 | 91.00 | 91.83 |
+| R5 | 82.80 | 83.21 |
+| R6 | 84.58 | 84.84 |
+| R7 | 71.21 | 73.21 |
+| R8 | 93.44 | 93.77 |
+| R9 | 92.79 | 93.33 |
+| R10 | 90.69 | 91.26 |
+| R11 | 77.86 | 78.68 |
+| R12 | 54.99 | 57.13 |
+| R13 | 91.33 | 91.63 |
+| R14 | 78.23 | 78.97 |
+| R15 | 92.88 | 93.30 |
+| R16 | 84.83 | 86.49 |
+| R17 | 86.21 | 87.02 |
+| R18 | 80.88 | 82.45 |
+| R19 | 93.99 | 94.39 |
+| **Avg** | **84.07** | **84.97** |
 
+- Previous R1-R17 avg was unet=82.74, +tta=83.75. Adding R18+R19 improved: +1.33/+1.22
+- R8 +tta jumped from 83.50 to 93.77 — massive improvement (more collapse training data)
+- R11 dropped from 83.69 to 78.68 (sensitive to training distribution)
 - Models saved: `data/spatial_model.pkl`, `data/mlp_model.pt`, `data/unet_model.pt`
-- All trained on R1-R17 (17 rounds, 85 seeds)
+- All trained on R1-R19 (19 rounds, 95 seeds), 10 min wall-clock for U-Net
+
+### Round 19
+- Round ID: 597e60cf-d1a1-4627-ac4d-2a61da68b6df
+- Round weight: 2.527 (1.05^19)
+- Map: 40×40, 5 seeds. Settlements: 61, 58, 48, 48, 36. Ports: 0, 3, 1, 1, 0.
+- Model: V10 (50% GBM + 50% MLP, 90% U-Net+TTA blend, adaptive Bayesian overlay (5,100))
+- 50/50 queries used (45 grid + 5 repeat, one per seed)
+- **COLLAPSE round**: S→S=0.041 (vs 0.318 historical) — settlements dying massively
+  - E→E: +12.4% above historical — very stable empty
+  - S→S: -27.7% below historical — extreme collapse
+  - S→E: +23.4% — settlements reverting to empty
+  - F→F: +17.3% — strong forest retention
+  - Activity: 0.00% → NORMAL mode detected
+- **U-Net loading bug**: V2 UNet class refactoring broke loading of V1-trained weights (key name mismatch: `enc1`→`encoders.0`, etc). First two submit passes went through WITHOUT U-Net blend. Fixed with key migration in `_load_unet_model()`, resubmitted all seeds with full V10 pipeline.
+- **R19 is now our BEST ROUND**: 94.84 raw (weighted 239.64). Previous best was R15=92.53 (weighted 192.37). The +47.3 weighted point jump shows the value of collapse round specialization + higher round weight.
+- **Score: 94.84 raw (weighted 239.64, rank 14)** — BEST ROUND EVER, BEST WEIGHTED EVER
+  - Per-seed: 95.19, 94.84, 94.58, 94.94, 94.65 — all above 94.5!
+  - All 5 seeds within 0.6 pts of each other — remarkably consistent
+- **Collapse round pattern**: Similar to R3 (S→S=1.8%), R8 (S→S=6.7%), R10 (S→S=5.8%)
+- **Key takeaway**: Our model now handles collapse rounds VERY well (94.84 vs R8=73.68, R10=91.61). Training on 5+ collapse rounds (R3,R4,R8,R10,R19) has dramatically improved generalization.
+- **Key takeaway**: Collapse rounds are now our STRENGTH, not weakness. All settlements dying is low-entropy and predictable.
+- Ground truth downloaded for all 5 seeds
+
+### Round 20
+- Round ID: fd82f643-15e2-40e7-9866-8d8f5157081c
+- Round weight: 2.6533 (1.05^20)
+- Map: 40×40, 5 seeds. Settlements: 42, 41, 47, 45, 62. Ports: 1, 3, 4, 1, 5.
+- Model: V10 (50% GBM + 50% MLP, 90% U-Net+TTA blend, overlay (5,100))
+- 50/50 queries used (45 grid + 5 repeat on settlement-dense seeds)
+- **Another COLLAPSE round**: S→S=0.142 (vs 0.318 historical, but not as extreme as R19's 0.041)
+  - E→E: +11.0% above historical
+  - S→S: -17.6% below historical — settlements declining significantly
+  - S→E: +15.7% — settlements dying
+  - P→F: +20.4% — ports reverting to forest heavily
+  - F→F: +15.1% — forest reclaiming territory
+  - S→F: +3.4% — some settlements becoming forest
+  - Activity: 0.00% → NORMAL mode
+- **Score: 90.65 raw (weighted 240.53, rank 33)** — solid collapse round performance
+  - Per-seed: 90.05, 89.99, 90.98, 89.81, 92.44
+  - Seed 5 best (92.44) — fewest settlements (62 initial, but more ports=5)
+  - Weighted score 240.53 is now our best weighted score (beats R19's 239.64)
+- **Two consecutive collapse rounds** (R19 + R20): R20 scored 4pts below R19, likely because S→S=0.142 is harder to predict than extreme collapse (0.041) — partial die-off has more spatial uncertainty than total collapse
+- Models NOT retrained with R19 data for R20 submission (time constraint). Local retrain completed after R20 submit.
+- **Leaderboard after R20**: #33 Novanet (w=240.53, 17 rounds, streak=86.80). Top: People Made Machines (247.70), Maskinkraft (247.69), WinterIsComing_ (246.78). Gap to top: ~7 pts.
+
+### Multi-Round Retraining (R1-R20)
+- All 3 models retrained on R1-R20 (20 rounds, 100 seeds)
+- **GBM+MLP LORO**: spatial=84.39, +sim=84.52 (up from 83.94/84.21 on R1-R19)
+  - MLP val_kl=0.03386 (vs 0.03291 on R19), early stop at epoch 102
+  - Learned debiaser tested — WORSE on all rounds, not saved
+- **U-Net LORO**: unet=84.95, +tta=85.88 (up from 84.07/84.97 on R1-R19)
+  - Per-round highlights: R19=95.31, R20=93.14, R13=93.89, R15=94.06
+  - R7 still weakest (71.05) — outlier round dynamics
+- R20 holdout: GBM spatial=85.77, +sim=86.97, U-Net+TTA=93.14
+
+| Round | GBM spatial | +sim | U-Net | +TTA |
+|-------|-------------|------|-------|------|
+| R1 | 85.53 | 85.59 | 87.49 | 87.92 |
+| R2 | 89.60 | 89.06 | 83.09 | 83.98 |
+| R3 | 88.28 | 88.18 | 85.45 | 85.72 |
+| R4 | 89.69 | 90.25 | 91.04 | 91.42 |
+| R5 | 84.48 | 84.48 | 84.24 | 84.49 |
+| R6 | 84.26 | 83.72 | 82.89 | 83.49 |
+| R7 | 68.58 | 68.80 | 70.66 | 71.05 |
+| R8 | 90.40 | 90.76 | 90.63 | 90.79 |
+| R9 | 90.85 | 90.86 | 91.65 | 92.04 |
+| R10 | 91.05 | 91.39 | 91.02 | 91.38 |
+| R11 | 84.09 | 84.33 | 79.59 | 79.31 |
+| R12 | 56.44 | 56.72 | 55.69 | 56.49 |
+| R13 | 91.83 | 92.37 | 93.52 | 93.89 |
+| R14 | 80.00 | 79.97 | 90.63 | 91.38 |
+| R15 | 91.39 | 91.77 | 93.73 | 94.06 |
+| R16 | 83.44 | 83.57 | 88.99 | 90.36 |
+| R17 | 86.37 | 86.74 | 91.88 | 92.13 |
+| R18 | 73.10 | 73.52 | 90.68 | 90.94 |
+| R19 | 92.58 | 92.79 | 94.97 | 95.31 |
+| R20 | 85.77 | 86.97 | 92.65 | 93.14 |
+| **Avg** | **84.39** | **84.52** | **84.95** | **85.88** |
+
+### V2_big U-Net LORO (VM experiment, R1-R18)
+- Config: base_channels=48, n_levels=3, 4.3M params (vs V1's ~300K). epochs=300, no mixup.
+- **LORO avg: 83.63** — WORSE than V1 (85.88 on R1-R20). Bigger model overfits with only 18+17 training rounds.
+- Per-round: R1=81.31, R2=79.63, R3=88.12, R4=91.70, R5=85.65, R6=85.42, R7=74.31, R8=88.45, R9=93.21, R10=91.08, R11=80.69, R12=50.84, R13=92.07, R14=78.45, R15=92.74, R16=86.10, R17=85.86, R18=79.80
+- **Key insight**: With only 20 rounds of training data, V1 (32ch, 2-level, ~300K params) remains optimal. Larger models (48ch, 3-level) overfit. More training data is needed before scaling up the architecture.
+
+### Round 21
+- Round ID: b3a0be6b-b48b-419d-916a-b7a77fa58c4d
+- Round weight: 2.7860 (1.05^21)
+- Model: V10 (50% GBM + 50% MLP, 90% U-Net+TTA blend, adaptive Bayesian overlay (5,100))
+- 50/50 queries used (45 grid + 5 extra queries), all 5 seeds accepted on both baseline and final resubmission passes
+- **Score: 91.11 raw (weighted 253.83, rank 31)** — new BEST WEIGHTED score, despite raw below R19
+  - Per-seed: 90.73, 90.83, 92.03, 91.59, 90.36
+  - All 5 seeds landed in a tight 90.36-92.03 band — stable across seeds
+- **Key takeaway**: R21 confirms the late-round weighting effect. Raw 91.11 was enough to beat R20's weighted 240.53 and R19's 239.64 by a wide margin.
+- Ground truth downloaded for all 5 seeds
+
+### Round 22
+- Round ID: a8be24e1-bd48-49bb-aa46-c5593da79f6f
+- Round weight: 2.9253 (1.05^22)
+- Map: 40×40, Initial: Empty 76.4%, Forest 19.4%, Mountain 2.4%, Settlement 1.8%, Port 0.1%
+- Model: V10 (50% GBM + 50% MLP, 80% U-Net+TTA blend, Bayesian overlay (5,200), floor 0.0003)
+- 50/50 queries used (45 grid + 5 diagnostic repeats), 2 submission passes × 5 seeds
+- **Score: 88.24 raw (weighted 258.13, rank 17/24 leaderboard)** — new BEST WEIGHTED
+  - Per-seed: 88.03, 87.51, 88.68, 88.19, 88.78
+  - 2nd pass improved all seeds (1st pass: 87.82, 87.09, 88.55, 87.86, 88.46)
+- GT transitions (5-seed avg):
+  - S→S=0.171, S→E=0.557, S→F=0.252, S→R=0.018 (strong decline)
+  - E→E=0.966, E→S=0.020, E→F=0.011 (empty very stable)
+  - F→F=0.930, F→E=0.034 (forest stable)
+  - Mountain: M→M=1.000
+- **Key observations**:
+  - Observed S→S was 0.223, but GT S→S=0.171 — observations overestimated settlement survival by ~30%
+  - Low entropy (0.13-0.20) collapse round — settlements nearly eliminated
+  - Very low dynamic cell count (476-715 per seed) due to stability of empty/mountain terrain
+  - Raw 88.24 below R19 (94.84) and R21 (91.11), but weighting makes it new best
+- Ground truth downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R21)
+- All 3 models retrained on R1-R21 (21 rounds, 105 seeds)
+- **GBM+MLP LORO**: spatial=84.63, +sim=84.74, baseline=63.45
+  - R21 holdout: spatial=91.22, +sim=90.86, baseline=84.31
+  - MLP val_kl=0.03244, early stop at epoch 149
+  - Learned debiaser tested on 18 rounds — WORSE on every fold, not saved
+- **U-Net LORO**: unet=84.65, +tta=85.52
+  - R21 holdout: unet=90.40, +tta=90.94
+  - Final all-round U-Net trained on 840 augmented images and saved to `data/unet_model.pt`
+- Updated all-round transition matrix after R21:
+  - Empty→Empty 84.22%, Empty→Settlement 11.22%, Empty→Forest 2.80%
+  - Settlement→Empty 44.63%, Settlement→Settlement 31.22%, Settlement→Forest 21.25%
+  - Port→Port 17.21%, Port→Forest 23.41%
+  - Forest→Forest 76.38%, Forest→Settlement 14.14%
 

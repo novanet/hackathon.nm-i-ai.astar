@@ -1,9 +1,9 @@
 """Diagnose R16: compare old settings vs new settings on R16 ground truth."""
 import numpy as np
-import json
 from pathlib import Path
 from astar.client import get_round_detail
 from astar.model import build_prediction, apply_floor
+from astar.replay import load_ground_truth_array
 from astar.submit import score_prediction
 
 R16_ID = "8f664aed-8839-4c85-bed0-77a2cac7c6f5"
@@ -11,9 +11,9 @@ DATA_DIR = Path("data") / f"round_{R16_ID}"
 
 
 def load_gt(seed_idx: int) -> np.ndarray:
-    path = DATA_DIR / f"ground_truth_s{seed_idx}.json"
-    data = json.loads(path.read_text())
-    gt = np.array(data["ground_truth"], dtype=np.float64)
+    gt = load_ground_truth_array(R16_ID, seed_idx)
+    if gt is None:
+        raise FileNotFoundError(f"Missing ground truth for seed {seed_idx} in {DATA_DIR}")
     return gt
 
 

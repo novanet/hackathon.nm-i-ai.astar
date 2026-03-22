@@ -8,6 +8,8 @@ and test predictions without making network requests.
 import json
 from pathlib import Path
 
+import numpy as np
+
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 # Terrain code → prediction class index
@@ -71,6 +73,42 @@ def load_analysis(round_id: str, seed_index: int) -> dict | None:
     if not files:
         return None
     return json.loads(files[-1].read_text(encoding="utf-8"))
+
+
+def load_ground_truth(round_id: str, seed_index: int) -> dict | None:
+    """
+    Load the saved ground-truth payload for a seed.
+
+    Prefers the canonical ground_truth_s*.json file and falls back to older
+    analysis_s*.json payloads when needed. This loader is intentionally strict:
+    it refuses to treat a saved submission under the "prediction" key as GT.
+    """
+    d = round_dir(round_id)
+    gt_path = d / f"ground_truth_s{seed_index}.json"
+    if gt_path.exists():
+        data = json.loads(gt_path.read_text(encoding="utf-8"))
+        if "ground_truth" not in data:
+            raise KeyError(
+                f"{gt_path} is missing 'ground_truth'; refusing to use 'prediction' as GT"
+            )
+        return data
+
+    analysis = load_analysis(round_id, seed_index)
+    if analysis is None:
+        return None
+    if "ground_truth" not in analysis:
+        raise KeyError(
+            f"analysis payload for round {round_id} seed {seed_index} is missing 'ground_truth'"
+        )
+    return analysis
+
+
+def load_ground_truth_array(round_id: str, seed_index: int) -> np.ndarray | None:
+    """Load saved ground truth as an HxWx6 float64 array."""
+    payload = load_ground_truth(round_id, seed_index)
+    if payload is None:
+        return None
+    return np.array(payload["ground_truth"], dtype=np.float64)
 
 
 def build_observation_grid(round_id: str, seed_index: int,
