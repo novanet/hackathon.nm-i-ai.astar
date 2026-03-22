@@ -1,0 +1,488 @@
+Device: cuda
+
+=== LOADING ALL ROUND DATA ===
+  R1: 5 seeds, 40╫40
+  R2: 5 seeds, 40╫40
+  R3: 5 seeds, 40╫40
+  R4: 5 seeds, 40╫40
+  R5: 5 seeds, 40╫40
+  R6: 5 seeds, 40╫40
+  R7: 5 seeds, 40╫40
+  R8: 5 seeds, 40╫40
+  R9: 5 seeds, 40╫40
+  R10: 5 seeds, 40╫40
+  R11: 5 seeds, 40╫40
+  R12: 5 seeds, 40╫40
+  R13: 5 seeds, 40╫40
+  R14: 5 seeds, 40╫40
+  Total: 70 seeds (560 with D4 augmentation)
+
+=== PRECOMPUTING U-NET INPUTS ===
+  Single input computation: 39.8ms
+
+=== LEAVE-ONE-ROUND-OUT CROSS-VALIDATION (epochs=300) ===
+
+  --- Test R1 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.51877, val=0.52914, best=0.52914, lr=1.0e-03
+    Epoch   1: train=0.21804, val=0.24671, best=0.24671, lr=1.0e-03
+    Epoch   2: train=0.13462, val=0.12708, best=0.12708, lr=1.0e-03
+    Epoch   3: train=0.10584, val=0.08127, best=0.08127, lr=1.0e-03
+    Epoch   4: train=0.08545, val=0.06772, best=0.06772, lr=1.0e-03
+    Epoch   5: train=0.07606, val=0.05980, best=0.05980, lr=1.0e-03
+    Epoch   6: train=0.07119, val=0.05942, best=0.05942, lr=1.0e-03
+    Epoch   7: train=0.06709, val=0.05395, best=0.05395, lr=1.0e-03
+    Epoch   8: train=0.06236, val=0.05266, best=0.05266, lr=1.0e-03
+    Epoch   9: train=0.06026, val=0.04945, best=0.04945, lr=1.0e-03
+    Epoch  10: train=0.05809, val=0.04539, best=0.04539, lr=1.0e-03
+    Epoch  12: train=0.05429, val=0.04517, best=0.04517, lr=1.0e-03
+    Epoch  14: train=0.05135, val=0.04406, best=0.04406, lr=9.9e-04
+    Epoch  16: train=0.05187, val=0.04356, best=0.04356, lr=9.9e-04
+    Epoch  17: train=0.05188, val=0.04174, best=0.04174, lr=9.9e-04
+    Epoch  20: train=0.04569, val=0.03923, best=0.03923, lr=9.9e-04
+    Epoch  23: train=0.04339, val=0.03873, best=0.03873, lr=9.8e-04
+    Epoch  24: train=0.04381, val=0.03868, best=0.03868, lr=9.8e-04
+    Epoch  28: train=0.04038, val=0.03727, best=0.03727, lr=9.8e-04
+    Epoch  29: train=0.03656, val=0.03686, best=0.03686, lr=9.8e-04
+    Epoch  30: train=0.03719, val=0.03678, best=0.03678, lr=9.7e-04
+    Epoch  34: train=0.03813, val=0.03639, best=0.03639, lr=9.7e-04
+    Epoch  39: train=0.03633, val=0.03612, best=0.03612, lr=9.6e-04
+    Epoch  40: train=0.03051, val=0.03772, best=0.03612, lr=9.5e-04
+    Epoch  41: train=0.02963, val=0.03554, best=0.03554, lr=9.5e-04
+    Epoch  42: train=0.02853, val=0.03525, best=0.03525, lr=9.5e-04
+    Epoch  44: train=0.02763, val=0.03381, best=0.03381, lr=9.5e-04
+    Epoch  60: train=0.02434, val=0.03485, best=0.03381, lr=9.0e-04
+    Early stop at epoch 74 (patience=30)
+    R1: unet=79.09, +tta=80.43 (d=+1.33)  seeds: ['82.3', '75.7', '77.8', '83.4', '76.3']  [109s]
+
+  --- Test R2 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.57935, val=0.60735, best=0.60735, lr=1.0e-03
+    Epoch   1: train=0.25873, val=0.30684, best=0.30684, lr=1.0e-03
+    Epoch   2: train=0.15347, val=0.22049, best=0.22049, lr=1.0e-03
+    Epoch   3: train=0.11593, val=0.11096, best=0.11096, lr=1.0e-03
+    Epoch   4: train=0.09145, val=0.07211, best=0.07211, lr=1.0e-03
+    Epoch   5: train=0.08058, val=0.06291, best=0.06291, lr=1.0e-03
+    Epoch   7: train=0.06871, val=0.05450, best=0.05450, lr=1.0e-03
+    Epoch   8: train=0.06319, val=0.05316, best=0.05316, lr=1.0e-03
+    Epoch   9: train=0.06209, val=0.05223, best=0.05223, lr=1.0e-03
+    Epoch  10: train=0.05849, val=0.04869, best=0.04869, lr=1.0e-03
+    Epoch  11: train=0.05930, val=0.04520, best=0.04520, lr=1.0e-03
+    Epoch  12: train=0.05555, val=0.04392, best=0.04392, lr=1.0e-03
+    Epoch  14: train=0.05488, val=0.04220, best=0.04220, lr=9.9e-04
+    Epoch  18: train=0.05218, val=0.04174, best=0.04174, lr=9.9e-04
+    Epoch  19: train=0.04734, val=0.03974, best=0.03974, lr=9.9e-04
+    Epoch  20: train=0.04937, val=0.04242, best=0.03974, lr=9.9e-04
+    Epoch  23: train=0.04595, val=0.03920, best=0.03920, lr=9.8e-04
+    Epoch  24: train=0.04566, val=0.03783, best=0.03783, lr=9.8e-04
+    Epoch  25: train=0.04216, val=0.03737, best=0.03737, lr=9.8e-04
+    Epoch  27: train=0.04039, val=0.03624, best=0.03624, lr=9.8e-04
+    Epoch  33: train=0.03491, val=0.03513, best=0.03513, lr=9.7e-04
+    Epoch  38: train=0.03283, val=0.03465, best=0.03465, lr=9.6e-04
+    Epoch  40: train=0.03017, val=0.03412, best=0.03412, lr=9.5e-04
+    Epoch  55: train=0.02337, val=0.03363, best=0.03363, lr=9.2e-04
+    Epoch  60: train=0.02231, val=0.03426, best=0.03363, lr=9.0e-04
+    Epoch  67: train=0.02133, val=0.03343, best=0.03343, lr=8.8e-04
+    Epoch  80: train=0.02033, val=0.03572, best=0.03343, lr=8.3e-04
+    Early stop at epoch 97 (patience=30)
+    R2: unet=79.72, +tta=80.97 (d=+1.24)  seeds: ['81.0', '81.8', '78.1', '76.7', '81.0']  [134s]
+
+  --- Test R3 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.45075, val=0.59243, best=0.59243, lr=1.0e-03
+    Epoch   1: train=0.18151, val=0.19023, best=0.19023, lr=1.0e-03
+    Epoch   2: train=0.11541, val=0.10104, best=0.10104, lr=1.0e-03
+    Epoch   3: train=0.08968, val=0.07586, best=0.07586, lr=1.0e-03
+    Epoch   4: train=0.07798, val=0.06288, best=0.06288, lr=1.0e-03
+    Epoch   5: train=0.07269, val=0.05773, best=0.05773, lr=1.0e-03
+    Epoch   8: train=0.06330, val=0.05141, best=0.05141, lr=1.0e-03
+    Epoch   9: train=0.05868, val=0.05051, best=0.05051, lr=1.0e-03
+    Epoch  11: train=0.05634, val=0.04664, best=0.04664, lr=1.0e-03
+    Epoch  12: train=0.05439, val=0.04525, best=0.04525, lr=1.0e-03
+    Epoch  13: train=0.05472, val=0.04406, best=0.04406, lr=9.9e-04
+    Epoch  14: train=0.05273, val=0.04306, best=0.04306, lr=9.9e-04
+    Epoch  16: train=0.05080, val=0.04201, best=0.04201, lr=9.9e-04
+    Epoch  18: train=0.04920, val=0.04155, best=0.04155, lr=9.9e-04
+    Epoch  19: train=0.04771, val=0.04090, best=0.04090, lr=9.9e-04
+    Epoch  20: train=0.04726, val=0.04251, best=0.04090, lr=9.9e-04
+    Epoch  22: train=0.04573, val=0.03858, best=0.03858, lr=9.9e-04
+    Epoch  24: train=0.04330, val=0.03795, best=0.03795, lr=9.8e-04
+    Epoch  29: train=0.03783, val=0.03743, best=0.03743, lr=9.8e-04
+    Epoch  31: train=0.03574, val=0.03736, best=0.03736, lr=9.7e-04
+    Epoch  32: train=0.03759, val=0.03560, best=0.03560, lr=9.7e-04
+    Epoch  40: train=0.03057, val=0.03648, best=0.03560, lr=9.5e-04
+    Epoch  42: train=0.02871, val=0.03490, best=0.03490, lr=9.5e-04
+    Epoch  60: train=0.02467, val=0.03672, best=0.03490, lr=9.0e-04
+    Early stop at epoch 72 (patience=30)
+    R3: unet=88.02, +tta=88.26 (d=+0.24)  seeds: ['86.5', '89.3', '88.1', '88.8', '87.4']  [120s]
+
+  --- Test R4 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.48327, val=0.36876, best=0.36876, lr=1.0e-03
+    Epoch   1: train=0.19840, val=0.33201, best=0.33201, lr=1.0e-03
+    Epoch   2: train=0.12638, val=0.20374, best=0.20374, lr=1.0e-03
+    Epoch   3: train=0.09801, val=0.07873, best=0.07873, lr=1.0e-03
+    Epoch   5: train=0.07964, val=0.06926, best=0.06926, lr=1.0e-03
+    Epoch   6: train=0.07432, val=0.06442, best=0.06442, lr=1.0e-03
+    Epoch   7: train=0.06756, val=0.05755, best=0.05755, lr=1.0e-03
+    Epoch   9: train=0.06239, val=0.05058, best=0.05058, lr=1.0e-03
+    Epoch  11: train=0.06061, val=0.04856, best=0.04856, lr=1.0e-03
+    Epoch  14: train=0.05645, val=0.04808, best=0.04808, lr=9.9e-04
+    Epoch  15: train=0.05357, val=0.04685, best=0.04685, lr=9.9e-04
+    Epoch  16: train=0.05478, val=0.04426, best=0.04426, lr=9.9e-04
+    Epoch  17: train=0.05272, val=0.04298, best=0.04298, lr=9.9e-04
+    Epoch  20: train=0.05076, val=0.04153, best=0.04153, lr=9.9e-04
+    Epoch  22: train=0.04842, val=0.04010, best=0.04010, lr=9.9e-04
+    Epoch  29: train=0.04196, val=0.03901, best=0.03901, lr=9.8e-04
+    Epoch  32: train=0.03889, val=0.03732, best=0.03732, lr=9.7e-04
+    Epoch  33: train=0.03836, val=0.03638, best=0.03638, lr=9.7e-04
+    Epoch  38: train=0.03481, val=0.03633, best=0.03633, lr=9.6e-04
+    Epoch  40: train=0.03519, val=0.03866, best=0.03633, lr=9.5e-04
+    Epoch  43: train=0.03220, val=0.03575, best=0.03575, lr=9.5e-04
+    Epoch  45: train=0.03043, val=0.03496, best=0.03496, lr=9.4e-04
+    Epoch  60: train=0.02559, val=0.03734, best=0.03496, lr=9.0e-04
+    Early stop at epoch 75 (patience=30)
+    R4: unet=90.99, +tta=91.82 (d=+0.83)  seeds: ['89.8', '91.7', '90.5', '90.5', '92.5']  [106s]
+
+  --- Test R5 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.41938, val=0.37201, best=0.37201, lr=1.0e-03
+    Epoch   1: train=0.17363, val=0.21951, best=0.21951, lr=1.0e-03
+    Epoch   2: train=0.11046, val=0.12910, best=0.12910, lr=1.0e-03
+    Epoch   3: train=0.08942, val=0.07727, best=0.07727, lr=1.0e-03
+    Epoch   5: train=0.07290, val=0.05941, best=0.05941, lr=1.0e-03
+    Epoch   6: train=0.06665, val=0.05565, best=0.05565, lr=1.0e-03
+    Epoch   7: train=0.06244, val=0.05350, best=0.05350, lr=1.0e-03
+    Epoch   8: train=0.06029, val=0.04882, best=0.04882, lr=1.0e-03
+    Epoch  12: train=0.05602, val=0.04533, best=0.04533, lr=1.0e-03
+    Epoch  13: train=0.05428, val=0.04506, best=0.04506, lr=9.9e-04
+    Epoch  14: train=0.05825, val=0.04305, best=0.04305, lr=9.9e-04
+    Epoch  16: train=0.05095, val=0.04110, best=0.04110, lr=9.9e-04
+    Epoch  19: train=0.04637, val=0.04094, best=0.04094, lr=9.9e-04
+    Epoch  20: train=0.04665, val=0.04230, best=0.04094, lr=9.9e-04
+    Epoch  22: train=0.04743, val=0.03840, best=0.03840, lr=9.9e-04
+    Epoch  23: train=0.04571, val=0.03683, best=0.03683, lr=9.8e-04
+    Epoch  31: train=0.03830, val=0.03578, best=0.03578, lr=9.7e-04
+    Epoch  38: train=0.03083, val=0.03486, best=0.03486, lr=9.6e-04
+    Epoch  40: train=0.03095, val=0.03475, best=0.03475, lr=9.5e-04
+    Epoch  60: train=0.02464, val=0.03550, best=0.03475, lr=9.0e-04
+    Epoch  64: train=0.02378, val=0.03474, best=0.03474, lr=8.9e-04
+    Epoch  80: train=0.02220, val=0.03798, best=0.03474, lr=8.3e-04
+    Early stop at epoch 94 (patience=30)
+    R5: unet=82.50, +tta=83.71 (d=+1.20)  seeds: ['79.0', '83.4', '82.0', '83.6', '84.4']  [132s]
+
+  --- Test R6 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.51509, val=0.70645, best=0.70645, lr=1.0e-03
+    Epoch   1: train=0.21441, val=0.31948, best=0.31948, lr=1.0e-03
+    Epoch   2: train=0.13313, val=0.14605, best=0.14605, lr=1.0e-03
+    Epoch   3: train=0.10267, val=0.09371, best=0.09371, lr=1.0e-03
+    Epoch   4: train=0.08855, val=0.07247, best=0.07247, lr=1.0e-03
+    Epoch   6: train=0.07236, val=0.06181, best=0.06181, lr=1.0e-03
+    Epoch   7: train=0.06676, val=0.05439, best=0.05439, lr=1.0e-03
+    Epoch   8: train=0.06704, val=0.05237, best=0.05237, lr=1.0e-03
+    Epoch  11: train=0.06200, val=0.05087, best=0.05087, lr=1.0e-03
+    Epoch  12: train=0.05736, val=0.04880, best=0.04880, lr=1.0e-03
+    Epoch  13: train=0.05835, val=0.04638, best=0.04638, lr=9.9e-04
+    Epoch  15: train=0.05717, val=0.04469, best=0.04469, lr=9.9e-04
+    Epoch  16: train=0.05299, val=0.04343, best=0.04343, lr=9.9e-04
+    Epoch  18: train=0.04946, val=0.04146, best=0.04146, lr=9.9e-04
+    Epoch  20: train=0.04768, val=0.04096, best=0.04096, lr=9.9e-04
+    Epoch  24: train=0.04603, val=0.03885, best=0.03885, lr=9.8e-04
+    Epoch  37: train=0.03284, val=0.03812, best=0.03812, lr=9.6e-04
+    Epoch  39: train=0.03449, val=0.03806, best=0.03806, lr=9.6e-04
+    Epoch  40: train=0.03328, val=0.03837, best=0.03806, lr=9.5e-04
+    Epoch  52: train=0.03148, val=0.03785, best=0.03785, lr=9.2e-04
+    Epoch  60: train=0.02411, val=0.03785, best=0.03785, lr=9.0e-04
+    Epoch  80: train=0.02275, val=0.04051, best=0.03785, lr=8.3e-04
+    Early stop at epoch 90 (patience=30)
+    R6: unet=86.91, +tta=88.19 (d=+1.28)  seeds: ['86.2', '87.9', '84.7', '88.9', '86.7']  [118s]
+
+  --- Test R7 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.54651, val=0.41619, best=0.41619, lr=1.0e-03
+    Epoch   1: train=0.24365, val=0.24437, best=0.24437, lr=1.0e-03
+    Epoch   2: train=0.14632, val=0.13668, best=0.13668, lr=1.0e-03
+    Epoch   3: train=0.10161, val=0.09351, best=0.09351, lr=1.0e-03
+    Epoch   4: train=0.08579, val=0.07203, best=0.07203, lr=1.0e-03
+    Epoch   6: train=0.07003, val=0.05801, best=0.05801, lr=1.0e-03
+    Epoch   8: train=0.06007, val=0.05171, best=0.05171, lr=1.0e-03
+    Epoch   9: train=0.05808, val=0.05167, best=0.05167, lr=1.0e-03
+    Epoch  11: train=0.05387, val=0.04593, best=0.04593, lr=1.0e-03
+    Epoch  14: train=0.05321, val=0.04543, best=0.04543, lr=9.9e-04
+    Epoch  15: train=0.05142, val=0.04400, best=0.04400, lr=9.9e-04
+    Epoch  16: train=0.05055, val=0.04366, best=0.04366, lr=9.9e-04
+    Epoch  17: train=0.04660, val=0.04105, best=0.04105, lr=9.9e-04
+    Epoch  20: train=0.04879, val=0.04354, best=0.04105, lr=9.9e-04
+    Epoch  22: train=0.04338, val=0.03996, best=0.03996, lr=9.9e-04
+    Epoch  25: train=0.04362, val=0.03930, best=0.03930, lr=9.8e-04
+    Epoch  26: train=0.04231, val=0.03826, best=0.03826, lr=9.8e-04
+    Epoch  27: train=0.04189, val=0.03801, best=0.03801, lr=9.8e-04
+    Epoch  28: train=0.03943, val=0.03662, best=0.03662, lr=9.8e-04
+    Epoch  35: train=0.03489, val=0.03654, best=0.03654, lr=9.6e-04
+    Epoch  40: train=0.03211, val=0.03702, best=0.03654, lr=9.5e-04
+    Epoch  43: train=0.03062, val=0.03581, best=0.03581, lr=9.5e-04
+    Epoch  48: train=0.02895, val=0.03545, best=0.03545, lr=9.4e-04
+    Epoch  60: train=0.02392, val=0.03873, best=0.03545, lr=9.0e-04
+    Epoch  64: train=0.02186, val=0.03495, best=0.03495, lr=8.9e-04
+    Epoch  80: train=0.02146, val=0.03753, best=0.03495, lr=8.3e-04
+    Early stop at epoch 94 (patience=30)
+    R7: unet=73.26, +tta=76.18 (d=+2.93)  seeds: ['71.1', '74.8', '68.9', '74.9', '76.6']  [126s]
+
+  --- Test R8 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.35902, val=0.44899, best=0.44899, lr=1.0e-03
+    Epoch   1: train=0.14589, val=0.17488, best=0.17488, lr=1.0e-03
+    Epoch   2: train=0.09654, val=0.08672, best=0.08672, lr=1.0e-03
+    Epoch   3: train=0.07943, val=0.07130, best=0.07130, lr=1.0e-03
+    Epoch   4: train=0.07169, val=0.06179, best=0.06179, lr=1.0e-03
+    Epoch   6: train=0.06219, val=0.05702, best=0.05702, lr=1.0e-03
+    Epoch   9: train=0.05766, val=0.05346, best=0.05346, lr=1.0e-03
+    Epoch  11: train=0.05362, val=0.05145, best=0.05145, lr=1.0e-03
+    Epoch  12: train=0.05496, val=0.04920, best=0.04920, lr=1.0e-03
+    Epoch  13: train=0.05093, val=0.04745, best=0.04745, lr=9.9e-04
+    Epoch  16: train=0.04903, val=0.04683, best=0.04683, lr=9.9e-04
+    Epoch  17: train=0.04713, val=0.04577, best=0.04577, lr=9.9e-04
+    Epoch  19: train=0.04610, val=0.04389, best=0.04389, lr=9.9e-04
+    Epoch  20: train=0.04534, val=0.04234, best=0.04234, lr=9.9e-04
+    Epoch  26: train=0.04042, val=0.04212, best=0.04212, lr=9.8e-04
+    Epoch  28: train=0.03625, val=0.04148, best=0.04148, lr=9.8e-04
+    Epoch  34: train=0.03224, val=0.04073, best=0.04073, lr=9.7e-04
+    Epoch  40: train=0.02966, val=0.04177, best=0.04073, lr=9.5e-04
+    Epoch  60: train=0.02296, val=0.04219, best=0.04073, lr=9.0e-04
+    Early stop at epoch 64 (patience=30)
+    R8: unet=84.06, +tta=84.57 (d=+0.50)  seeds: ['88.3', '81.7', '86.9', '82.1', '81.3']  [136s]
+
+  --- Test R9 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.47366, val=0.58317, best=0.58317, lr=1.0e-03
+    Epoch   1: train=0.20474, val=0.28762, best=0.28762, lr=1.0e-03
+    Epoch   2: train=0.12448, val=0.12521, best=0.12521, lr=1.0e-03
+    Epoch   3: train=0.09653, val=0.10433, best=0.10433, lr=1.0e-03
+    Epoch   4: train=0.08013, val=0.06955, best=0.06955, lr=1.0e-03
+    Epoch   6: train=0.07193, val=0.06757, best=0.06757, lr=1.0e-03
+    Epoch   7: train=0.06715, val=0.05782, best=0.05782, lr=1.0e-03
+    Epoch   8: train=0.06051, val=0.05616, best=0.05616, lr=1.0e-03
+    Epoch   9: train=0.06120, val=0.05501, best=0.05501, lr=1.0e-03
+    Epoch  10: train=0.05832, val=0.05352, best=0.05352, lr=1.0e-03
+    Epoch  11: train=0.05705, val=0.05147, best=0.05147, lr=1.0e-03
+    Epoch  13: train=0.05786, val=0.05104, best=0.05104, lr=9.9e-04
+    Epoch  14: train=0.05685, val=0.04825, best=0.04825, lr=9.9e-04
+    Epoch  16: train=0.05108, val=0.04734, best=0.04734, lr=9.9e-04
+    Epoch  17: train=0.05196, val=0.04724, best=0.04724, lr=9.9e-04
+    Epoch  19: train=0.04904, val=0.04483, best=0.04483, lr=9.9e-04
+    Epoch  20: train=0.04970, val=0.04660, best=0.04483, lr=9.9e-04
+    Epoch  21: train=0.04608, val=0.04423, best=0.04423, lr=9.9e-04
+    Epoch  22: train=0.04553, val=0.04350, best=0.04350, lr=9.9e-04
+    Epoch  26: train=0.04166, val=0.04247, best=0.04247, lr=9.8e-04
+    Epoch  29: train=0.04120, val=0.04106, best=0.04106, lr=9.8e-04
+    Epoch  31: train=0.03758, val=0.03995, best=0.03995, lr=9.7e-04
+    Epoch  40: train=0.03057, val=0.04090, best=0.03995, lr=9.5e-04
+    Epoch  60: train=0.02438, val=0.04185, best=0.03995, lr=9.0e-04
+    Early stop at epoch 61 (patience=30)
+    R9: unet=92.26, +tta=92.69 (d=+0.43)  seeds: ['90.8', '90.6', '93.0', '93.4', '93.5']  [105s]
+
+  --- Test R10 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.47589, val=0.42891, best=0.42891, lr=1.0e-03
+    Epoch   1: train=0.20441, val=0.23239, best=0.23239, lr=1.0e-03
+    Epoch   2: train=0.12801, val=0.11884, best=0.11884, lr=1.0e-03
+    Epoch   3: train=0.09672, val=0.10119, best=0.10119, lr=1.0e-03
+    Epoch   4: train=0.08073, val=0.07689, best=0.07689, lr=1.0e-03
+    Epoch   5: train=0.07550, val=0.07213, best=0.07213, lr=1.0e-03
+    Epoch   6: train=0.06788, val=0.06689, best=0.06689, lr=1.0e-03
+    Epoch   7: train=0.06285, val=0.06124, best=0.06124, lr=1.0e-03
+    Epoch   8: train=0.06251, val=0.05948, best=0.05948, lr=1.0e-03
+    Epoch   9: train=0.05751, val=0.05586, best=0.05586, lr=1.0e-03
+    Epoch  10: train=0.05768, val=0.05304, best=0.05304, lr=1.0e-03
+    Epoch  12: train=0.05557, val=0.04943, best=0.04943, lr=1.0e-03
+    Epoch  17: train=0.05267, val=0.04943, best=0.04943, lr=9.9e-04
+    Epoch  19: train=0.04705, val=0.04688, best=0.04688, lr=9.9e-04
+    Epoch  20: train=0.04880, val=0.04608, best=0.04608, lr=9.9e-04
+    Epoch  22: train=0.04620, val=0.04504, best=0.04504, lr=9.9e-04
+    Epoch  23: train=0.04269, val=0.04196, best=0.04196, lr=9.8e-04
+    Epoch  28: train=0.03745, val=0.04127, best=0.04127, lr=9.8e-04
+    Epoch  38: train=0.03177, val=0.04120, best=0.04120, lr=9.6e-04
+    Epoch  40: train=0.02797, val=0.04124, best=0.04120, lr=9.5e-04
+    Epoch  41: train=0.02783, val=0.04062, best=0.04062, lr=9.5e-04
+    Epoch  56: train=0.02553, val=0.04046, best=0.04046, lr=9.1e-04
+    Epoch  60: train=0.02250, val=0.04168, best=0.04046, lr=9.0e-04
+    Epoch  80: train=0.01955, val=0.04284, best=0.04046, lr=8.3e-04
+    Early stop at epoch 86 (patience=30)
+    R10: unet=89.82, +tta=90.27 (d=+0.45)  seeds: ['88.1', '90.1', '90.0', '90.8', '90.2']  [75s]
+
+  --- Test R11 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.38533, val=0.51986, best=0.51986, lr=1.0e-03
+    Epoch   1: train=0.16018, val=0.19172, best=0.19172, lr=1.0e-03
+    Epoch   2: train=0.11133, val=0.11019, best=0.11019, lr=1.0e-03
+    Epoch   3: train=0.08840, val=0.09096, best=0.09096, lr=1.0e-03
+    Epoch   4: train=0.07561, val=0.06715, best=0.06715, lr=1.0e-03
+    Epoch   5: train=0.06750, val=0.06124, best=0.06124, lr=1.0e-03
+    Epoch   7: train=0.06048, val=0.05462, best=0.05462, lr=1.0e-03
+    Epoch   8: train=0.05938, val=0.05341, best=0.05341, lr=1.0e-03
+    Epoch  10: train=0.05685, val=0.05180, best=0.05180, lr=1.0e-03
+    Epoch  12: train=0.05595, val=0.04983, best=0.04983, lr=1.0e-03
+    Epoch  14: train=0.05115, val=0.04616, best=0.04616, lr=9.9e-04
+    Epoch  15: train=0.04891, val=0.04346, best=0.04346, lr=9.9e-04
+    Epoch  19: train=0.04602, val=0.04297, best=0.04297, lr=9.9e-04
+    Epoch  20: train=0.04264, val=0.04694, best=0.04297, lr=9.9e-04
+    Epoch  24: train=0.04225, val=0.04199, best=0.04199, lr=9.8e-04
+    Epoch  25: train=0.03986, val=0.04063, best=0.04063, lr=9.8e-04
+    Epoch  26: train=0.03832, val=0.04060, best=0.04060, lr=9.8e-04
+    Epoch  33: train=0.03208, val=0.04001, best=0.04001, lr=9.7e-04
+    Epoch  40: train=0.03072, val=0.04393, best=0.04001, lr=9.5e-04
+    Epoch  45: train=0.02671, val=0.03810, best=0.03810, lr=9.4e-04
+    Epoch  60: train=0.02353, val=0.04089, best=0.03810, lr=9.0e-04
+    Early stop at epoch 75 (patience=30)
+    R11: unet=77.34, +tta=78.58 (d=+1.24)  seeds: ['79.4', '76.7', '72.2', '80.4', '78.0']  [59s]
+
+  --- Test R12 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.45745, val=0.36837, best=0.36837, lr=1.0e-03
+    Epoch   1: train=0.19553, val=0.23843, best=0.23843, lr=1.0e-03
+    Epoch   2: train=0.12559, val=0.16562, best=0.16562, lr=1.0e-03
+    Epoch   3: train=0.09461, val=0.09606, best=0.09606, lr=1.0e-03
+    Epoch   4: train=0.08060, val=0.08704, best=0.08704, lr=1.0e-03
+    Epoch   5: train=0.07343, val=0.06446, best=0.06446, lr=1.0e-03
+    Epoch   6: train=0.06431, val=0.06253, best=0.06253, lr=1.0e-03
+    Epoch   7: train=0.06138, val=0.05590, best=0.05590, lr=1.0e-03
+    Epoch   8: train=0.05728, val=0.05313, best=0.05313, lr=1.0e-03
+    Epoch  10: train=0.05775, val=0.05109, best=0.05109, lr=1.0e-03
+    Epoch  12: train=0.05437, val=0.05087, best=0.05087, lr=1.0e-03
+    Epoch  13: train=0.05118, val=0.04839, best=0.04839, lr=9.9e-04
+    Epoch  14: train=0.04909, val=0.04821, best=0.04821, lr=9.9e-04
+    Epoch  15: train=0.04797, val=0.04743, best=0.04743, lr=9.9e-04
+    Epoch  16: train=0.04932, val=0.04715, best=0.04715, lr=9.9e-04
+    Epoch  17: train=0.04587, val=0.04305, best=0.04305, lr=9.9e-04
+    Epoch  20: train=0.04381, val=0.04263, best=0.04263, lr=9.9e-04
+    Epoch  25: train=0.03976, val=0.04085, best=0.04085, lr=9.8e-04
+    Epoch  26: train=0.03801, val=0.03950, best=0.03950, lr=9.8e-04
+    Epoch  29: train=0.03570, val=0.03828, best=0.03828, lr=9.8e-04
+    Epoch  36: train=0.03208, val=0.03763, best=0.03763, lr=9.6e-04
+    Epoch  39: train=0.03083, val=0.03741, best=0.03741, lr=9.6e-04
+    Epoch  40: train=0.02874, val=0.04048, best=0.03741, lr=9.5e-04
+    Epoch  60: train=0.02401, val=0.03864, best=0.03741, lr=9.0e-04
+    Early stop at epoch 69 (patience=30)
+    R12: unet=60.22, +tta=61.46 (d=+1.24)  seeds: ['56.8', '66.0', '52.0', '59.4', '66.9']  [92s]
+
+  --- Test R13 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.44908, val=0.42062, best=0.42062, lr=1.0e-03
+    Epoch   1: train=0.19058, val=0.20688, best=0.20688, lr=1.0e-03
+    Epoch   2: train=0.11902, val=0.14914, best=0.14914, lr=1.0e-03
+    Epoch   3: train=0.09368, val=0.09935, best=0.09935, lr=1.0e-03
+    Epoch   5: train=0.07230, val=0.08329, best=0.08329, lr=1.0e-03
+    Epoch   6: train=0.07062, val=0.07583, best=0.07583, lr=1.0e-03
+    Epoch   7: train=0.06620, val=0.07571, best=0.07571, lr=1.0e-03
+    Epoch   8: train=0.06122, val=0.06950, best=0.06950, lr=1.0e-03
+    Epoch  11: train=0.05836, val=0.06258, best=0.06258, lr=1.0e-03
+    Epoch  13: train=0.05657, val=0.05796, best=0.05796, lr=9.9e-04
+    Epoch  16: train=0.05130, val=0.05588, best=0.05588, lr=9.9e-04
+    Epoch  20: train=0.04953, val=0.05504, best=0.05504, lr=9.9e-04
+    Epoch  22: train=0.04751, val=0.05338, best=0.05338, lr=9.9e-04
+    Epoch  24: train=0.04537, val=0.05130, best=0.05130, lr=9.8e-04
+    Epoch  26: train=0.04174, val=0.05098, best=0.05098, lr=9.8e-04
+    Epoch  30: train=0.03875, val=0.04992, best=0.04992, lr=9.7e-04
+    Epoch  33: train=0.03638, val=0.04982, best=0.04982, lr=9.7e-04
+    Epoch  35: train=0.03512, val=0.04839, best=0.04839, lr=9.6e-04
+    Epoch  40: train=0.02985, val=0.05218, best=0.04839, lr=9.5e-04
+    Epoch  60: train=0.02545, val=0.05046, best=0.04839, lr=9.0e-04
+    Early stop at epoch 65 (patience=30)
+    R13: unet=91.77, +tta=92.22 (d=+0.45)  seeds: ['91.4', '90.8', '91.3', '92.8', '92.5']  [78s]
+
+  --- Test R14 (train on 13 rounds) ---
+    Training data: 520 images (13 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.40494, val=0.37067, best=0.37067, lr=1.0e-03
+    Epoch   1: train=0.16180, val=0.19330, best=0.19330, lr=1.0e-03
+    Epoch   2: train=0.10364, val=0.10897, best=0.10897, lr=1.0e-03
+    Epoch   3: train=0.08243, val=0.08197, best=0.08197, lr=1.0e-03
+    Epoch   5: train=0.06828, val=0.07712, best=0.07712, lr=1.0e-03
+    Epoch   6: train=0.06310, val=0.06972, best=0.06972, lr=1.0e-03
+    Epoch   7: train=0.05968, val=0.06691, best=0.06691, lr=1.0e-03
+    Epoch   8: train=0.05802, val=0.06653, best=0.06653, lr=1.0e-03
+    Epoch  10: train=0.05637, val=0.05971, best=0.05971, lr=1.0e-03
+    Epoch  11: train=0.05224, val=0.05880, best=0.05880, lr=1.0e-03
+    Epoch  13: train=0.05328, val=0.05749, best=0.05749, lr=9.9e-04
+    Epoch  14: train=0.04971, val=0.05557, best=0.05557, lr=9.9e-04
+    Epoch  15: train=0.04989, val=0.05479, best=0.05479, lr=9.9e-04
+    Epoch  16: train=0.04662, val=0.05309, best=0.05309, lr=9.9e-04
+    Epoch  17: train=0.04802, val=0.05280, best=0.05280, lr=9.9e-04
+    Epoch  18: train=0.04550, val=0.05276, best=0.05276, lr=9.9e-04
+    Epoch  19: train=0.04424, val=0.05093, best=0.05093, lr=9.9e-04
+    Epoch  20: train=0.04383, val=0.05291, best=0.05093, lr=9.9e-04
+    Epoch  21: train=0.04118, val=0.05048, best=0.05048, lr=9.9e-04
+    Epoch  22: train=0.04175, val=0.04982, best=0.04982, lr=9.9e-04
+    Epoch  26: train=0.03910, val=0.04841, best=0.04841, lr=9.8e-04
+    Epoch  28: train=0.03646, val=0.04779, best=0.04779, lr=9.8e-04
+    Epoch  33: train=0.03204, val=0.04763, best=0.04763, lr=9.7e-04
+    Epoch  36: train=0.03119, val=0.04755, best=0.04755, lr=9.6e-04
+    Epoch  40: train=0.02982, val=0.04831, best=0.04755, lr=9.5e-04
+    Epoch  60: train=0.02479, val=0.05129, best=0.04755, lr=9.0e-04
+    Early stop at epoch 66 (patience=30)
+    R14: unet=76.74, +tta=77.20 (d=+0.46)  seeds: ['75.5', '77.6', '77.8', '76.6', '76.2']  [82s]
+
+=== LORO SUMMARY ===
+   Round     UNet    + TTA
+   -----    -----    -----
+  R1        79.09    80.43
+  R2        79.72    80.97
+  R3        88.02    88.26
+  R4        90.99    91.82
+  R5        82.50    83.71
+  R6        86.91    88.19
+  R7        73.26    76.18
+  R8        84.06    84.57
+  R9        92.26    92.69
+  R10       89.82    90.27
+  R11       77.34    78.58
+  R12       60.22    61.46
+  R13       91.77    92.22
+  R14       76.74    77.20
+     Avg    82.34    83.32
+
+  Wall-clock time: 1472s (24.5min)
+
+=== TRAINING FINAL U-NET (all 14 rounds) ===
+  Training data: 560 images (14 rounds ╫ 5 seeds ╫ 8 aug)
+    Epoch   0: train=0.43737, val=0.47247, best=0.47247, lr=1.0e-03
+    Epoch   1: train=0.17387, val=0.16806, best=0.16806, lr=1.0e-03
+    Epoch   2: train=0.10886, val=0.10679, best=0.10679, lr=1.0e-03
+    Epoch   4: train=0.07568, val=0.07944, best=0.07944, lr=1.0e-03
+    Epoch   5: train=0.06763, val=0.07766, best=0.07766, lr=1.0e-03
+    Epoch   6: train=0.06393, val=0.06531, best=0.06531, lr=1.0e-03
+    Epoch   9: train=0.05816, val=0.06482, best=0.06482, lr=1.0e-03
+    Epoch  11: train=0.05388, val=0.05791, best=0.05791, lr=1.0e-03
+    Epoch  12: train=0.05452, val=0.05725, best=0.05725, lr=1.0e-03
+    Epoch  14: train=0.05238, val=0.05619, best=0.05619, lr=9.9e-04
+    Epoch  16: train=0.04977, val=0.05575, best=0.05575, lr=9.9e-04
+    Epoch  17: train=0.04880, val=0.05364, best=0.05364, lr=9.9e-04
+    Epoch  19: train=0.04619, val=0.05065, best=0.05065, lr=9.9e-04
+    Epoch  20: train=0.04679, val=0.05445, best=0.05065, lr=9.9e-04
+    Epoch  22: train=0.04275, val=0.04934, best=0.04934, lr=9.9e-04
+    Epoch  23: train=0.04217, val=0.04930, best=0.04930, lr=9.8e-04
+    Epoch  26: train=0.03974, val=0.04865, best=0.04865, lr=9.8e-04
+    Epoch  28: train=0.03855, val=0.04672, best=0.04672, lr=9.8e-04
+    Epoch  33: train=0.03410, val=0.04645, best=0.04645, lr=9.7e-04
+    Epoch  40: train=0.02908, val=0.04803, best=0.04645, lr=9.5e-04
+    Epoch  60: train=0.02372, val=0.04904, best=0.04645, lr=9.0e-04
+    Early stop at epoch 63 (patience=30)
+  Saved to data\unet_model.pt
+
+=== IN-SAMPLE SCORES (sanity check) ===
+  R1: unet=91.22, +tta=91.65  seeds: ['90.8', '91.8', '90.4', '92.1', '91.0']
+  R2: unet=93.28, +tta=93.86  seeds: ['94.9', '93.1', '92.6', '91.4', '94.5']
+  R3: unet=90.87, +tta=91.46  seeds: ['90.7', '91.2', '90.8', '91.2', '90.5']
+  R4: unet=93.15, +tta=93.59  seeds: ['92.6', '93.9', '92.1', '92.9', '94.2']
+  R5: unet=90.20, +tta=91.88  seeds: ['85.7', '92.3', '91.6', '90.6', '91.0']
+  R6: unet=93.73, +tta=94.17  seeds: ['93.7', '93.9', '92.8', '94.3', '94.0']
+  R7: unet=85.44, +tta=86.19  seeds: ['85.8', '85.2', '84.9', '85.7', '85.6']
+  R8: unet=94.90, +tta=95.14  seeds: ['95.4', '94.2', '95.7', '94.9', '94.4']
+  R9: unet=93.94, +tta=94.39  seeds: ['91.7', '92.9', '95.6', '94.7', '94.9']
+  R10: unet=92.09, +tta=92.48  seeds: ['91.5', '92.5', '92.0', '92.1', '92.3']
+  R11: unet=92.20, +tta=92.75  seeds: ['93.5', '91.8', '92.4', '91.3', '92.0']
+  R12: unet=79.08, +tta=79.98  seeds: ['78.1', '80.4', '78.0', '78.0', '81.0']
+  R13: unet=93.67, +tta=94.14  seeds: ['93.7', '93.2', '93.3', '94.2', '94.0']
+  R14: unet=91.89, +tta=92.52  seeds: ['92.1', '93.4', '91.3', '91.4', '91.3']
+
+Done.

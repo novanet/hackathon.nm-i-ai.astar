@@ -1,0 +1,170 @@
+=== LOADING ALL ROUND DATA ===
+  R1: 5 seeds, map 40x40
+  R2: 5 seeds, map 40x40
+  R3: 5 seeds, map 40x40
+  R4: 5 seeds, map 40x40
+  R5: 5 seeds, map 40x40
+  R6: 5 seeds, map 40x40
+  R7: 5 seeds, map 40x40
+  R8: 5 seeds, map 40x40
+  R9: 5 seeds, map 40x40
+  R10: 5 seeds, map 40x40
+  R11: 5 seeds, map 40x40
+  R12: 5 seeds, map 40x40
+  R13: 5 seeds, map 40x40
+  R14: 5 seeds, map 40x40
+  R15: 5 seeds, map 40x40
+  R16: 5 seeds, map 40x40
+  R17: 5 seeds, map 40x40
+  Total: 85 seeds, 136000 cells
+
+=== LEAVE-ONE-ROUND-OUT CROSS-VALIDATION ===
+  Test R1: spatial=85.68, +sim=85.37(d=-0.31), baseline=69.61  seeds: ['86.0', '84.9', '84.6', '89.7', '83.2']
+  Test R2: spatial=89.48, +sim=89.85(d=+0.37), baseline=73.35  seeds: ['90.6', '91.0', '88.3', '86.9', '90.5']
+  Test R3: spatial=87.60, +sim=87.58(d=-0.02), baseline=52.29  seeds: ['86.3', '88.6', '88.0', '88.9', '86.2']
+  Test R4: spatial=90.33, +sim=90.67(d=+0.34), baseline=87.17  seeds: ['90.4', '91.0', '88.6', '90.2', '91.4']
+  Test R5: spatial=84.16, +sim=83.02(d=-1.14), baseline=67.06  seeds: ['82.3', '84.2', '84.3', '84.3', '85.7']
+  Test R6: spatial=84.30, +sim=84.28(d=-0.02), baseline=52.70  seeds: ['83.8', '83.4', '81.8', '86.5', '86.0']
+  Test R7: spatial=68.54, +sim=67.02(d=-1.52), baseline=40.71  seeds: ['64.2', '70.2', '69.0', '67.8', '71.6']
+  Test R8: spatial=81.90, +sim=87.77(d=+5.87), baseline=75.07  seeds: ['79.3', '83.5', '80.7', '82.4', '83.5']
+  Test R9: spatial=90.97, +sim=90.99(d=+0.03), baseline=82.87  seeds: ['88.3', '89.6', '92.6', '92.1', '92.3']
+  Test R10: spatial=91.19, +sim=91.26(d=+0.07), baseline=65.89  seeds: ['89.5', '92.0', '91.6', '91.7', '91.2']
+  Test R11: spatial=84.07, +sim=85.30(d=+1.23), baseline=50.15  seeds: ['85.5', '83.5', '81.4', '85.6', '84.4']
+  Test R12: spatial=58.34, +sim=56.48(d=-1.86), baseline=24.09  seeds: ['58.5', '58.3', '54.6', '59.3', '61.0']
+  Test R13: spatial=91.96, +sim=91.77(d=-0.19), baseline=84.60  seeds: ['92.6', '91.1', '91.3', '92.8', '92.0']
+  Test R14: spatial=80.21, +sim=79.18(d=-1.02), baseline=38.62  seeds: ['80.3', '81.9', '80.9', '80.1', '77.9']
+  Test R15: spatial=91.33, +sim=91.83(d=+0.51), baseline=77.80  seeds: ['92.2', '91.0', '90.4', '91.2', '91.7']
+  Test R16: spatial=83.01, +sim=82.50(d=-0.52), baseline=75.35  seeds: ['81.5', '84.0', '85.2', '78.8', '85.6']
+  Test R17: spatial=86.29, +sim=86.99(d=+0.70), baseline=56.55  seeds: ['87.8', '87.1', '83.5', '87.3', '85.6']
+
+  LORO average:  spatial=84.08, +sim=84.23(d=+0.15), baseline=63.17
+
+=== UPDATED TRANSITION MATRIX (all rounds) ===
+                  Empty Settlement       Port       Ruin     Forest   Mountain
+       Empty     0.8361     0.1158     0.0078     0.0109     0.0294     0.0000
+  Settlement     0.4345     0.3258     0.0041     0.0263     0.2093     0.0000
+        Port     0.4693     0.0965     0.1832     0.0221     0.2288     0.0000
+        Ruin     0.0000     0.0000     0.0000     0.0000     0.0000     0.0000
+      Forest     0.0769     0.1465     0.0092     0.0137     0.7537     0.0000
+    Mountain     0.0000     0.0000     0.0000     0.0000     0.0000     1.0000
+
+  Updated transitions score on each round:
+    R1: avg=70.17
+    R2: avg=74.01
+    R3: avg=51.36
+    R4: avg=86.98
+    R5: avg=67.52
+    R6: avg=53.51
+    R7: avg=41.45
+    R8: avg=74.22
+    R9: avg=83.11
+    R10: avg=65.00
+    R11: avg=51.15
+    R12: avg=24.78
+    R13: avg=84.50
+    R14: avg=39.46
+    R15: avg=78.38
+    R16: avg=75.57
+    R17: avg=57.55
+
+=== TRAINING FINAL ENSEMBLE (LGB 70% + XGB 30%, entropy-weighted) ===
+  Training on 136000 samples, 37 features (no augmentation)
+  Entropy weight power: 0.25
+  LGB model trained
+  XGB model trained
+  Ensemble saved to data\spatial_model.pkl
+
+=== TRAINING SET SCORES ===
+  R1: avg=87.48  seeds: ['87.5', '87.6', '86.2', '90.7', '85.4']
+  R2: avg=91.17  seeds: ['93.0', '92.3', '89.9', '88.7', '91.9']
+  R3: avg=92.36  seeds: ['90.4', '93.6', '92.6', '93.4', '91.7']
+  R4: avg=92.58  seeds: ['92.3', '93.2', '91.2', '92.6', '93.5']
+  R5: avg=86.21  seeds: ['84.9', '86.3', '85.8', '86.6', '87.5']
+  R6: avg=89.47  seeds: ['89.6', '89.4', '87.4', '90.6', '90.3']
+  R7: avg=74.21  seeds: ['71.1', '75.5', '74.0', '73.7', '76.7']
+  R8: avg=94.32  seeds: ['93.6', '94.5', '94.5', '94.5', '94.5']
+  R9: avg=93.44  seeds: ['91.5', '92.3', '94.7', '94.1', '94.5']
+  R10: avg=93.32  seeds: ['92.2', '93.8', '93.6', '93.8', '93.2']
+  R11: avg=89.08  seeds: ['90.6', '88.2', '87.4', '89.8', '89.5']
+  R12: avg=69.68  seeds: ['69.4', '71.1', '65.3', '70.0', '72.7']
+  R13: avg=93.16  seeds: ['94.1', '92.2', '92.3', '93.9', '93.3']
+  R14: avg=86.64  seeds: ['86.5', '89.2', '86.9', '85.9', '84.7']
+  R15: avg=93.38  seeds: ['94.0', '93.1', '92.5', '93.4', '93.9']
+  R16: avg=86.42  seeds: ['84.0', '88.0', '88.2', '82.2', '89.7']
+  R17: avg=90.30  seeds: ['91.1', '91.4', '88.2', '91.1', '89.7']
+
+=== CODE-READY TRANSITION MATRIX ===
+HISTORICAL_TRANSITIONS = np.array([
+    [0.8361, 0.1158, 0.0078, 0.0109, 0.0294, 0.0000],  # Empty ->
+    [0.4345, 0.3258, 0.0041, 0.0263, 0.2093, 0.0000],  # Settlement ->
+    [0.4693, 0.0965, 0.1832, 0.0221, 0.2288, 0.0000],  # Port ->
+    [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000],  # Ruin ->
+    [0.0769, 0.1465, 0.0092, 0.0137, 0.7537, 0.0000],  # Forest ->
+    [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain ->
+])
+
+=== TRAINING MLP (KL-loss, for triple-blend) ===
+  Epoch   0: train_kl=0.38273, val_kl=0.29416, best=0.29416, lr=1.0e-03
+  Epoch   1: train_kl=0.10256, val_kl=0.07835, best=0.07835, lr=1.0e-03
+  Epoch   2: train_kl=0.07100, val_kl=0.06078, best=0.06078, lr=1.0e-03
+  Epoch   3: train_kl=0.06515, val_kl=0.05831, best=0.05831, lr=1.0e-03
+  Epoch   4: train_kl=0.06200, val_kl=0.05653, best=0.05653, lr=1.0e-03
+  Epoch   5: train_kl=0.05969, val_kl=0.05454, best=0.05454, lr=1.0e-03
+  Epoch   6: train_kl=0.05681, val_kl=0.05217, best=0.05217, lr=1.0e-03
+  Epoch   7: train_kl=0.05463, val_kl=0.05068, best=0.05068, lr=1.0e-03
+  Epoch   8: train_kl=0.05274, val_kl=0.04832, best=0.04832, lr=1.0e-03
+  Epoch  10: train_kl=0.05097, val_kl=0.04716, best=0.04716, lr=1.0e-03
+  Epoch  11: train_kl=0.04966, val_kl=0.04546, best=0.04546, lr=1.0e-03
+  Epoch  12: train_kl=0.04888, val_kl=0.04544, best=0.04544, lr=1.0e-03
+  Epoch  14: train_kl=0.04741, val_kl=0.04397, best=0.04397, lr=9.9e-04
+  Epoch  16: train_kl=0.04750, val_kl=0.04295, best=0.04295, lr=9.9e-04
+  Epoch  18: train_kl=0.04643, val_kl=0.04277, best=0.04277, lr=9.9e-04
+  Epoch  20: train_kl=0.04522, val_kl=0.04210, best=0.04210, lr=9.9e-04
+  Epoch  22: train_kl=0.04454, val_kl=0.04191, best=0.04191, lr=9.9e-04
+  Epoch  23: train_kl=0.04430, val_kl=0.04154, best=0.04154, lr=9.8e-04
+  Epoch  25: train_kl=0.04351, val_kl=0.04134, best=0.04134, lr=9.8e-04
+  Epoch  26: train_kl=0.04322, val_kl=0.04116, best=0.04116, lr=9.8e-04
+  Epoch  27: train_kl=0.04307, val_kl=0.04083, best=0.04083, lr=9.8e-04
+  Epoch  28: train_kl=0.04279, val_kl=0.04023, best=0.04023, lr=9.8e-04
+  Epoch  32: train_kl=0.04169, val_kl=0.03894, best=0.03894, lr=9.7e-04
+  Epoch  37: train_kl=0.04071, val_kl=0.03840, best=0.03840, lr=9.6e-04
+  Epoch  39: train_kl=0.04018, val_kl=0.03803, best=0.03803, lr=9.6e-04
+  Epoch  40: train_kl=0.04043, val_kl=0.03820, best=0.03803, lr=9.5e-04
+  Epoch  44: train_kl=0.03970, val_kl=0.03721, best=0.03721, lr=9.5e-04
+  Epoch  50: train_kl=0.03974, val_kl=0.03657, best=0.03657, lr=9.3e-04
+  Epoch  57: train_kl=0.03800, val_kl=0.03593, best=0.03593, lr=9.1e-04
+  Epoch  60: train_kl=0.03765, val_kl=0.03760, best=0.03593, lr=9.0e-04
+  Epoch  66: train_kl=0.03773, val_kl=0.03564, best=0.03564, lr=8.8e-04
+  Epoch  68: train_kl=0.03688, val_kl=0.03560, best=0.03560, lr=8.8e-04
+  Epoch  70: train_kl=0.03687, val_kl=0.03512, best=0.03512, lr=8.7e-04
+  Epoch  76: train_kl=0.03653, val_kl=0.03499, best=0.03499, lr=8.5e-04
+  Epoch  77: train_kl=0.03630, val_kl=0.03494, best=0.03494, lr=8.4e-04
+  Epoch  80: train_kl=0.03651, val_kl=0.03456, best=0.03456, lr=8.3e-04
+  Epoch  81: train_kl=0.03630, val_kl=0.03452, best=0.03452, lr=8.3e-04
+  Epoch  86: train_kl=0.03613, val_kl=0.03448, best=0.03448, lr=8.1e-04
+  Epoch  95: train_kl=0.03561, val_kl=0.03393, best=0.03393, lr=7.7e-04
+  Epoch 100: train_kl=0.03599, val_kl=0.03539, best=0.03393, lr=7.5e-04
+  Early stopping at epoch 115 (patience=20)
+  MLP saved to data\mlp_model.pt
+
+=== TRAINING LEARNED DEBIASER ===
+  R1: no sim data (0 files), skipping
+  R3: no sim data (0 files), skipping
+  R4: no sim data (0 files), skipping
+  Training on 14 rounds: [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    LOO R2: MSE before=0.000012, after=0.002987, WORSE
+    LOO R5: MSE before=0.000056, after=0.000850, WORSE
+    LOO R6: MSE before=0.000101, after=0.015222, WORSE
+    LOO R7: MSE before=0.000211, after=0.001911, WORSE
+    LOO R8: MSE before=0.000044, after=0.033734, WORSE
+    LOO R9: MSE before=0.000340, after=0.001347, WORSE
+    LOO R10: MSE before=0.000004, after=0.044751, WORSE
+    LOO R11: MSE before=0.000209, after=0.014540, WORSE
+    LOO R12: MSE before=0.000104, after=0.018647, WORSE
+    LOO R13: MSE before=0.000490, after=0.005516, WORSE
+    LOO R14: MSE before=0.000147, after=0.015987, WORSE
+    LOO R15: MSE before=0.000160, after=0.000943, WORSE
+    LOO R16: MSE before=0.000108, after=0.008379, WORSE
+    LOO R17: MSE before=0.000155, after=0.014391, WORSE
+  LOO avg MSE: before=0.000153, after=0.012800, change=+0.012647
+  Learned debiaser did NOT improve ù NOT saving

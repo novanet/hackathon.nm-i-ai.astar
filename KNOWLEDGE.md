@@ -64,6 +64,7 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [Round 2] ~120-130 high-entropy cells per seed (entropy > 0.5) — these are settlement/forest boundary areas
 - [Round 2] Extra queries best spent on repeat observations of settlement-dense seeds (1 and 3 had 56 settlements each)
 - [Round 2] Viewport positions used: (0,0),(13,0),(26,0),(0,13),(13,13),(26,13),(0,26),(13,26),(26,26)
+- [Round 18] All-or-nothing full-grid logic is a late-round trap: if budget < 45, spend the remainder on a seed-balanced partial grid before any repeat queries.
 
 ## Scoring & Prediction Insights
 
@@ -71,6 +72,8 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - **HOT STREAK**: Average of last 3 round scores is also tracked (separate from leaderboard). Unclear if this affects final ranking.
 - **ROUND SCORE**: Average of 5 per-seed scores. Unsubmitted seeds = 0. Always submit all 5.
 - **SCORE FORMULA**: `score = max(0, min(100, 100 × exp(-3 × weighted_kl)))` where weighted_kl = entropy-weighted average KL across dynamic cells only.
+- [Round 10 prep] Blending a stochastic spatial simulator into the spatial model improved LORO average from 82.78 to 83.79 (+1.02) at 15% blend weight.
+- [Round 10 prep] Simulator blend helps most on collapse rounds: R8 improved from 78.91 to 86.46 (+7.55) in LORO. It hurts R5/R7 slightly, so keep blend moderate (15%, not 20%+).
 - **FLOOR**: ~~Docs recommend 0.01 but our backtest shows 0.001 is better (+1.6 pts).~~ Now using 0.0003 (optimal per LORO sweep). Never use 0.0.
 - ~~[Round 2] Using probability floor 0.01 (default) — awaiting score to calibrate~~
 - [Backtest R1] Probability floor sweep: 0.001 > 0.005 > 0.01. Floor 0.001 scores 74.3 vs 72.7 at 0.01 (+1.6 pts). Now using 0.001.
@@ -103,7 +106,21 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - [R7] **Observation bias**: Individual simulation runs overestimate transition rates vs GT probability tensor. E.g., observed S→S=38% but GT S→S=60.5%. This is because the GT averages across many stochastic runs, smoothing out volatility. Our observation-calibrated transitions are systematically too volatile.
 - [R7-R8] **Model is hypersensitive to round feature estimates**: Oracle test shows +8.74 pts on R7 from using GT features vs our estimates, yet the feature differences are tiny (S→S: 0.4026 vs 0.4216, only 4.5% error). The model learned to rely heavily on the S→S feature.
 - [R7-R8] **Feature estimation errors (obs-available rounds)**: S→S std=0.014, E→E std=0.005, F→F std=0.007, E→S std=0.005. S→S has 3x higher variance than others.
-- [R7-R8] **Cell-level observation blending still hurts**: Tested alpha=[0.3, 0.5, 0.7, 1.0, adaptive]. All alphas make scores WORSE on both R6 and R7. Single-run stochastic noise overwhelms the signal.
+- [R7-R8] **Cell-level observation blending still hurts**: Tested alpha=[0.3, 0.5, 0.7, 1.0, adaptive]. All alphas make scores WORSE on both R6 and R7. Single-run stochastic noise overwhelms the signal. ~~**REVISED R12**: Adaptive Bayesian overlay (entropy-scaled prior_strength) helps when model is OOD: +1.41 on R12, +0.47 on R11. Key: scale prior_strength by model confidence per cell (min_ps=5 for uncertain, max_ps=100 for confident). Uniform blending still hurts, but adaptive does not regress.~~
+- [V9] **Adaptive Bayesian overlay confirmed**: min_ps=5, max_ps=100, entropy-scaled. After adding this, sim blend becomes redundant (alpha=0 beats 0.15 everywhere). The overlay is CRITICAL — it's worth +0.04 to +1.41 across rounds with zero regression.
+- [R16] ~~**Bayesian overlay was WAY too conservative**: Backtest on R2-R15 with GT shows (5,100) barely moves predictions (max 4% shift). Sweeping prior strengths: optimal is min_ps=0.5, max_ps=3.0. Avg score: 40.56 (current) -> 40.66 (0.5-3), +2.72 vs no overlay. "Empirical (0.5-5)" won 11/12 rounds vs no overlay. Going too aggressive (0.1-1) drops below current. Sweet spot: min_ps=0.3-0.5, max_ps=3-5.~~
+- [R16] **OVERLAY BACKTEST WAS MISLEADING**: (0.5,3) won R2-R15 backtest (+2.72 avg) but CATASTROPHICALLY hurt on R16: scored 71.51 vs 87.00 with old (5,100) settings — **-15.5 point loss**. On volatile rounds (S→S=0.270), observations are misleading and aggressive overlay poisons predictions. REVERTED to (5,100). Lesson: in-sample backtest on observations is NOT reliable for overlay tuning.
+- [R17 prep] **M5 ENTROPY BUCKET TEMPS: disable by setting all to 1.0 (+0.226 on R9-R16)**: The optimized per-class bucket temps were tuned on GBM-only baseline; after adding U-Net blend, they became counterproductive. USE_ENTROPY_TEMPS=True but temps=np.ones(6) is correct. WARNING: setting USE_ENTROPY_TEMPS=False falls back to a DIFFERENT legacy adaptive temp path that is worse — must keep it True.
+- [R17 prep] **CALIBRATION FACTORS: keep at 1.0 (+0.070 on R9-R16)**: The Mountain calibration factor (0.95) was marginally helping on older rounds but slightly hurting on recent rounds. Combined with temps fix = +0.272 avg on R9-R16 validated.
+- [R17 prep] **U-Net blend ratio LORO sweep (R1-R15, 16 rounds)**: U-Net weight: 0%=83.95, 20%=87.29, 30%=88.44, 40%=89.41, 50%=90.21, **60%=90.88** (best tested). Higher U-Net % wins on every single round. Did NOT test >60%. ~~Current model.py: 40% U-Net~~
+- [R17 resubmit] **Quick blend sweep with saved models on R13-R16**: 30%=92.12, 40%=92.45, 50%=92.72, 60%=92.93, 70%=93.08, **80%=93.18**, **90%=93.23**, 100%=93.22. Monotonically increasing to 90%. R13 peaks at 50% (only round that prefers less U-Net). Updated UNET_BLEND_W to **0.80** (+0.73 over 0.40). Resubmitted R17.
+- [R17 resubmit] **Bayesian overlay sweep with 80% U-Net (R13-R16)**: MIN_PS insensitive (1-20 all tie). MAX_PS=200 best (93.215), MAX_PS=100 at 93.181, delta only +0.034. MAX_PS=500 slightly worse. Overlay disabled = 93.147 (-0.034 from current). Updated MAX_PS to 200 for future rounds. Not worth resubmitting R17 for +0.03.
+- [R17 prep] **Full LORO U-Net blend sweep (R1-R15) with extended weights**: avg scores 80%=92.06, 90%=92.37, 100%=92.52. Pure U-Net is best on this sweep, but gains above 80% are small and the curve is mostly flat on stable rounds (R8/R9/R10/R13/R15).
+- [R17 prep] **Important caveat on the full LORO blend sweep**: GBM+MLP are retrained per fold, but the U-Net is a single global model reused across all folds, so higher U-Net weights are biased upward. Treat 100% as an optimistic upper bound, with 80-90% as the safer operating range.
+- ~~[R17 prep] **Fast sweep on R14-R16 (with current models)**: Floor 0.0001 is optimal (no improvement at other values). Overlay (5,100) ties or beats all alternatives tested. Confirmed safe settings.~~
+- [R12] **Oracle transitions are TERRIBLE (score 21)**: Even GT-perfect per-class transition matrices score only ~21 on R12. Spatial information is CRITICAL — the model must know WHICH cells of the same initial class will transition. Our spatial model at 67 captures massive spatial signal (67 >> 21). Leaders at ~88 have a better spatial model, not better transitions.
+- [R12] **Dynamic calibration HURTS**: Scaling model predictions to match observed transition rates (-1 to -5 pts). Model predictions are already better calibrated than flat transition matrices because they incorporate spatial context.
+- [R12] **Adaptive Bayesian observation overlay**: Entropy-adaptive prior_strength per cell. Uncertain cells (high entropy) trust observation (ps=5), confident cells (low entropy) trust model (ps=100). R9+0.04, R10+0.08, R11+0.47, R12+1.41. No regression on any round. Observations are stochastic (independent samples per API query). Implemented in build_prediction step 6b.
 - [R7-R8] **Inference-time ensemble (feature perturbation)**: Sampling 20 predictions with perturbed round features and averaging shows +1.21 on R7, +0.07 on R2, but -0.59 on R6. Marginal, inconsistent.
 - [R7-R8] **Training with noisy round features (augmentation)**: Shows +8.09 on R7 in train-set eval, but **LORO shows -0.32 avg** — no real generalization benefit. The improvements were overfitting artifacts.
 - [R7-R8] **LORO CV still at 70.25** (orig) vs 69.93 (augmented). No improvement path found from feature noise approaches.
@@ -449,4 +466,301 @@ Critical learnings accumulated during the competition. Copilot should append fin
 - Submitted pass 1 + pass 2 (with extra observations).
 - **Observed transition diagnostics vs historical**: S→S is -23.8% (settlements dying more), E→S is -9.4% (less expansion), F→F is +19.0% (forest very stable), P→P is -10.7%. Detected as NORMAL mode.
 - This appears to be a "quiet" round — low settlement activity, forest-dominant final state.
-- **Score: pending** (round closes 23:45 UTC)
+- **Score: 91.61 (weighted 149.22, rank 8/238)**
+- Seeds: 90.40, 92.00, 91.60, 92.22, 91.83
+- **R10 was a COLLAPSE round** (S→S=0.058 GT, similar to R3/R8): all settlements died
+  - GT transitions: E→E=0.981, S→S=0.058, F→F=0.959, E→S=0.007
+  - Was misdetected as NORMAL mode at submission (obs showed S→S=-23.8% vs hist, but collapse detection uses debiased S→S < 0.15)
+- Despite NORMAL mode detection, model scored well (91.61) thanks to spatial model generalization from R3/R8 collapse training data
+- Ground truth downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R10)
+- [R1-R10] HISTORICAL_TRANSITIONS updated from all 10 rounds (80K cells, 50 seeds)
+- [R1-R10] Transition matrix: Empty→Empty 86.3%, Set→Set 26.7%, For→For 78.6%, Port→Port 15.3%
+- [R1-R10] SHRINKAGE_MATRIX updated from 7 obs rounds (R2, R5, R6, R7, R8, R9, R10)
+- [R1-R10] Spatial model retrained with 31 features on 80K samples
+- [R1-R10] **LORO avg: 84.26 (spatial), 84.98 (+sim blend, d=+0.71)**
+  - Per-round LORO: R1=84.6, R2=89.5, R3=87.6, R4=91.1, R5=81.5, R6=81.2, R7=66.4, R8=86.7, R9=90.6, R10=90.7
+  - R3 LORO: 82.9→87.6 (+4.7) — R10 collapse data further helps R3
+  - R8 LORO: 78.5→86.7 (+8.2) — huge gain from two more collapse examples
+  - R10 LORO: 90.7 (new, very strong for a collapse round)
+- [R1-R10] In-sample backtests (with obs): R1=82.7, R2=90.4, R3=48.7, R4=90.6, R5=87.0, R6=89.3, R7=73.3, R8=95.7, R9=93.4, R10=93.4
+  - R3=48.7 (no obs files — falls back to bare model)
+- [R1-R10] MLP val_kl: 0.0326 (was 0.0347 with R1-R9)
+- [R1-R10] Weighted leaderboard projections: R10=152.1 (best), R9=144.9, R8=141.3
+- [R1-R10] **4 collapse rounds now in training** (R3, R4, R8, R10) — 40% of rounds. Model should generalize much better to future collapses.
+
+### Round 11
+- Round ID: 324fde07-1670-4202-b199-7aa92ecb40ee
+- Round weight: 1.7103 (1.05^11)
+- Map: 40×40, 5 seeds. Seed settlements: 33, 32, 56, 35, 34. Ports: 0, 1, 1, 1, 1.
+- Model: V8+ (50% GBM + 50% MLP, 31 features, trained on R1-R10)
+- 50/50 queries used. Grid 9 viewports/seed + 5 extra.
+- Submitted pass 1 + pass 2 (with extra observations).
+- **Observed transition diagnostics**: E→E: -15.5%, S→S: +23.4%, F→F: -18.3%, E→S: +14.9%, P→P: +26.5%. HIGH-ACTIVITY mode detected.
+- This was a **boom/growth round** — settlements expanded aggressively
+- **Score: 81.77 (weighted 139.85)**
+- Seeds: 83.75, 81.01, 80.11, 82.66, 81.32
+- GT transitions: E→E=0.721, S→S=0.495, F→F=0.602, E→S=0.222
+- Highest S→S (49.5%) and E→S (22.2%) of any round — extreme settlement boom
+- LORO prediction was 80.69 — actual 81.77 in line with expectation
+- Ground truth downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R11)
+- [R1-R11] HISTORICAL_TRANSITIONS updated from all 11 rounds (88K cells, 55 seeds)
+- [R1-R11] Transition matrix: Empty→Empty 85.1%, Set→Set 28.5%, For→For 76.9%, Port→Port 15.9%
+- [R1-R11] SHRINKAGE_MATRIX updated from 8 obs rounds (R2, R5, R6, R7, R8, R9, R10, R11)
+- [R1-R11] **LORO avg: 83.99 (spatial), 84.64 (+sim blend, d=+0.65)**
+  - Per-round LORO: R1=85.0, R2=89.5, R3=86.9, R4=91.0, R5=81.1, R6=82.7, R7=66.3, R8=86.7, R9=90.8, R10=90.4, R11=80.7
+  - R11 LORO: 78.78→80.69 with sim (+1.91) — sim blend helps on high-activity
+- [R1-R11] MLP val_kl: 0.03326 (was 0.0326 with R1-R10)
+- [R1-R11] Best weighted score remains R10=149.22. R11=139.85 not a new best.
+- [R1-R11] Competitive thresholds to beat 152.1 leader: R12=84.69, R13=80.66, R14=76.82
+
+### Round 12
+- Round ID: 795bfb1f-54bd-4f39-a526-9868b36f7ebd
+- Round weight: 1.7959 (1.05^12)
+- **Score: 58.89 → improved to 67.41 (backtest) with recency-weighted transitions + activity detector fix**
+- GT S→S per seed: 0.572, 0.628, 0.554, 0.583, 0.636 (mean 0.5946) — extreme unprecedented high
+- Calibrated S→S = 0.6005, Debiased S→S = 0.6104 (both very close to GT)
+- **Key analysis**: Oracle transitions (using GT) only score ~21 — spatial info is critical. Our model at 67 captures major spatial signal.
+- **Dynamic calibration (scaling model to match transitions) HURTS** — model predictions are better calibrated than flat transition matrices
+- **Adaptive Bayesian observation overlay**: +1.41 on R12 (67.41→68.81), +0.47 on R11, +0.08 on R10, +0.04 on R9. NO regression. Implemented in build_prediction() with min_ps=5, max_ps=100.
+- Observations are STOCHASTIC: each API query runs a fresh simulation. Overlapping viewports give independent samples. R12 S0: 70/473 multi-obs cells disagree.
+- Full 40×40 map is observed via 9 viewports of 15×15 (with overlaps giving 1-4 obs per cell).
+- ~~Remaining ~20pt gap to leaders unexplained — likely requires fundamentally better spatial model architecture.~~ Gap closed to ~7 pts after V9 (7×7 ring + Bayesian overlay). R13 scored 90.10 (weighted 169.90, leader 177.1).
+
+### Multi-Round Retraining (R1-R12)
+- Model retrained at 2026-03-21 07:15 (includes R12's S→S=0.59 in training data)
+- LORO avg with adaptive overlay: R9=93.35, R10=93.19, R11=88.22, R12=68.81
+- After V9 optimizations (7×7 ring, sim blend disabled): R9=93.54, R10=94.36, R11=88.47, R12=73.31
+
+### Round 13
+- Round ID: 7b4bda99-6165-4221-97cc-27880f5e6d95
+- Round weight: 1.8856 (1.05^13)
+- Map: 40×40, 5 seeds. Settlements: 43, 53, 54, 44, 56. Ports: 0, 3, 1, 0, 5.
+- **S→S = 0.260 (NORMAL mode)** — similar to R9 (0.275) where we scored 93.31
+- 50/50 queries used. Submitted with adaptive Bayesian overlay.
+- Port collapse observed: Port→Empty +13-17%, Port→Port -6.6%
+- Settlement declining: S→S about -5% below historical
+- **Score: 90.10 (weighted 169.90, rank 32)** — seeds: 88.92, 89.81, 90.31, 91.45, 90.04
+- Ground truth downloaded for all 5 seeds
+
+### Model V9: 7×7 Ring Features + Sim Blend Disabled (post-R12 optimization)
+- **Change 1: 7×7 outer ring features**: Added 6 features for class fractions in the 7×7 outer ring (cells at Chebyshev distance exactly 3). Total features: **29 spatial + 8 round = 37**.
+  - Feature breakdown: one-hot(6) + 3×3 neighborhood(6) + 5×5 outer ring(6) + 7×7 outer ring(6) + dist features(5) + round features(8)
+  - Backtest improvement: R12 +2.22 pts (70.24→72.46), R10 +0.76 (93.38→94.14), consistent across rounds
+- **Change 2: Sim blend DISABLED (alpha=0)**: After adding adaptive Bayesian overlay (step 6b), sim blend (step 5a) became redundant. Tested alpha sweep [0, 0.05, 0.10, 0.15]: alpha=0 beats alpha=0.15 on ALL rounds. R9: +0.05, R10: +0.18, R11: +0.10, R12: +1.43.
+- **9×9 ring REJECTED**: Tested outer ring at Chebyshev distance 4. LORO dropped 81.32→80.86, R12 LORO crashed 51.25→47.19. Overfitting on 40×40 map.
+- **Blend ratio verified**: 50/50 GBM/MLP is optimal. Tested 30/70 through 70/30 — differences <±0.6 pts, inconsistent.
+- **Calibration/temp verified**: Current per-class temps and calibration factors are near-optimal. Tested 9 combinations — best is within 0.1 pts.
+- **Settlement attributes analyzed**: Wealth has strongest survival signal (Q1=21.4% → Q4=34.1% survival rate), but post-hoc adjustment HURTS because adaptive Bayesian overlay already captures the signal from observations.
+- **LORO avg: 82.46** (R1-R13, 37 features, 104K samples)
+  - Per-round: R13 LORO = 91.13
+- **Backtest (R1-R12 train)**: R9=93.54, R10=94.36, R11=88.47, R12=73.31
+
+### Multi-Round Retraining (R1-R13)
+- [R1-R13] Training on 104,000 samples (13 rounds × 5 seeds × 1600 cells), 37 features
+- [R1-R13] LORO avg: 82.46 (up from 81.32 with R1-R12)
+- [R1-R13] R13 LORO: 91.13 (strong — normal round data helps)
+- [R1-R13] MLP + LGB + XGB ensemble + adaptive Bayesian overlay saved to data/
+
+### Leaderboard Context (post-R13)
+- Our best weighted: R13 = 169.90. Leader = 177.1 (from R13, implying raw ~93.9).
+- Gap: 7.2 weighted pts. To beat on R14 (weight=1.9799): need ≥89.45 raw.
+- Our model backtests ~93 on normal rounds, so R14 should close the gap if normal.
+- Leaderboard API showed 0.00 for all teams on 2026-03-21 09:33 UTC (possible reset/scoring period change).
+
+### Round 14 (Active)
+- Round ID: d0a2c894-2162-4d49-86cf-435b9013f3b8
+- Round weight: 1.9799 (1.05^14)
+- Map: 40×40, 5 seeds, closes 2026-03-21T11:59:55 UTC
+- Mountain cluster at rows 3-8 NE and rows 23-29 center-left (5s in grid)
+- Ports: at least 2 visible (grid value 2 at ~(35,2) and ~(37,3))
+- 0/50 queries used — awaiting user permission to start
+- Initial grid: 51 settlements, 2 ports, 335 forests, 21 mountains, 1000 plains, 191 ocean
+
+### Session Findings (2026-03-21 pre-R14)
+
+#### Simulator Verified Inert
+- **Simulator has ZERO effect on live predictions**: `simulator.py` is NOT imported during `build_prediction()`. The sim blend code (model.py lines 866-879) is fully commented out. The `simulator` module is only loaded by `train_spatial.py` for LORO diagnostic printing (`.+sim=` scores) — it does NOT affect trained model weights or inference.
+- Verified by running `build_prediction()` and confirming `'simulator' not in sys.modules`.
+
+#### D4 Rotation Augmentation REJECTED
+- **Tested D4 group augmentation** (4 rotations × 2 flips = 8× data) for GBM training.
+- **LORO dropped from 82.46 → 82.19** with augmentation enabled.
+- **Per-round regressions**: R9: 93.54→90.00 (-3.54), R10: 94.36→90.25 (-4.11), R11: 88.47→78.17 (-10.30), R12: 73.31→52.48 (-20.83).
+- **Root cause**: Tree models (LGB 500 trees, depth 4) underfit with 8× training data (832K samples). Features (neighborhood fractions, distances, edge_dist) are already approximately rotation-invariant — augmentation adds redundant data that dilutes specific spatial patterns.
+- **Conclusion**: Data augmentation does NOT help GBM/XGB spatial models here. Would need capacity increase (more trees, deeper) which risks overfitting. Code remains in `train_spatial.py` but `USE_AUGMENTATION = False`.
+
+#### Extra Queries → Repeat Strategy
+- **Changed `spend_extra_queries`** in `run_next_round.py`: instead of querying offset viewports at different positions, now repeats the standard 9-viewport grid on the most dynamic seed (sorted by settlement count descending).
+- **Rationale**: Repeat observations give cells a 2nd independent stochastic sample, strengthening the adaptive Bayesian overlay (alpha += 1 per observation). The overlay is worth +0.04 to +1.41 per round — more observations compound this benefit.
+- **Budget math**: 50 total - 45 grid = 5 remaining → repeats on top seed's first 5 viewports.
+
+### Round 14 Results
+- Round ID: d0a2c894-2162-4d49-86cf-435b9013f3b8
+- Round weight: 1.9799 (1.05^14)
+- **Score: 81.93 (weighted 162.2, rank 35)** — seeds: 82.69, 83.08, 81.69, 81.64, 80.57
+- Diagnostics: S→S=0.510 (HIGH-RETENTION), E→S=+11.4%, F→F=-18.4%, Activity=14.09%
+- BOOM round confirmed — settlement retention well above historical
+- LORO prediction was 81.32 — actual 81.93, in line
+- 50/50 queries used (45 grid + 5 repeat on most dynamic seed)
+- GT downloaded for all 5 seeds
+
+### Multi-Round Retraining (R1-R14)
+- [R1-R14] Training on 112,000 samples (14 rounds × 5 seeds × 1600 cells), 37 features
+- [R1-R14] **LORO avg: 82.54** (was 82.46 with R1-R13, +0.08 from R14 data)
+  - Per-round: R1=85.18, R2=88.55, R3=88.47, R4=91.02, R5=82.23, R6=82.97, R7=69.83, R8=79.58, R9=89.42, R10=90.79, R11=78.34, R12=56.39, R13=91.42, R14=81.32
+- [R1-R14] MLP val_kl: 0.03501 (epoch 109, early stop 129). Architecture: [256, 128, 64] with residual connections.
+- [R1-R14] Learned debiasing REJECTED again (LOO MSE 0.000156 → 0.014984, 100× worse). Static SHRINKAGE_MATRIX remains optimal.
+- [R1-R14] Deeper MLP [256,128,64] with residuals deployed — provides better feature extraction for triple-blend.
+
+### Leaderboard Context (post-R14)
+- Our best weighted: R13 = 169.90 (90.10 × 1.8856). R14 weighted = 162.2 (not a new best).
+- To beat leader (177.1) on R15 (weight=2.0789): need ≥85.19 raw.
+- R15 is now available (score=None, 0 queries).
+
+### Model V10: U-Net Spatial Blend (post-R14)
+- **Architecture**: U-Net (19 input channels, 6 output classes, base_channels=32, ~477K params) added as third model head alongside GBM+MLP.
+  - Input channels: 6 terrain one-hot + 3 distance features (settlement/forest/port EDT) + settlement count (radius-5 conv) + edge distance + 8 round features = 19 channels on 40×40 grid
+  - D4 test-time augmentation (TTA): 8 transforms (4 rotations × 2 flips), averaged
+  - Loss: entropy-weighted KL divergence (matches competition scorer)
+- **U-Net LORO (standalone)**: avg=82.34 base, **83.32 with TTA** (vs GBM+MLP LORO 82.54)
+  - Per-round LORO+TTA: R1=87.51, R2=89.99, R3=85.15, R4=91.50, R5=86.47, R6=88.19, R7=76.18, R8=84.57, R9=92.69, R10=90.27, R11=78.58, R12=61.46, R13=92.22, R14=77.20
+  - U-Net LORO beats GBM+MLP LORO on 9/14 rounds, loses on R7, R8, R10, R12, R14
+- **CAUTION: In-sample vs LORO discrepancy**: Full-training in-sample scores show GBM+MLP=88.36 vs UNet+TTA=83.33 — U-Net loses on 13/14 rounds by 7-10 pts in-sample. LORO tells a different story (U-Net wins 9/14). This means U-Net generalizes better to unseen rounds but is weaker when the round is in training data. Blend ratios optimized on in-sample backtest may be overconfident.
+- **Blend ratio sweep** (backtest with observations, in-sample):
+  - 0% U-Net: 88.63 avg
+  - 20% U-Net: 89.36
+  - 30% U-Net: 89.49
+  - **40% U-Net: 89.51** (BEST)
+  - 50% U-Net: 89.44
+  - 70% U-Net: 89.08
+- **Optimal blend (in-sample)**: 60% GBM+MLP + 40% U-Net+TTA. +0.88 pts over GBM+MLP-only in backtest.
+- **TODO**: LORO-based blend sweep needed to validate out-of-sample. In-sample optimal may differ from LORO optimal.
+- **Pipeline**: In `build_prediction()` step 4b, after spatial_prior (GBM+MLP), blend with U-Net TTA predictions before calibration/temperature/overlay.
+- **Key insight**: U-Net should NOT be used standalone — it's significantly weaker in-sample. Value is as an ensemble component only.
+- **Key insight**: TTA is critical for U-Net (+0.98 LORO). The 40×40 grid is small enough that 8× forward passes add minimal latency (~1-2s per seed).
+- **Risk note**: U-Net has only been LORO-validated and in-sample backtested, not yet validated on a live round.
+
+### Round 15
+- Round ID: cc5442dd-bc5d-418b-911b-7eb960cb0390
+- Round weight: 2.0789 (1.05^15)
+- Map: 40×40, 5 seeds. Settlements: 32, 40, 53, 31, 59. Ports: 1, 0, 3, 0, 1.
+- Model: **V10** — first live use of U-Net blend (60% GBM+MLP + 40% U-Net+TTA)
+- 50/50 queries used (45 grid + 5 repeat on seed 4, highest settlement count 59)
+- Submitted pass 1 + pass 2 (with extra obs on seed 4)
+- **Observed transition diagnostics**:
+  - E→E: -8.4% (moderate expansion)
+  - S→S: +3.8% above historical (0.348 vs 0.310) — above-average retention
+  - E→S: +5.8% above historical — significant expansion
+  - F→F: stable (no notable deviation)
+  - P→Ruin: +7.1% — ports decaying
+  - P→Settlement: -5.1%, P→Forest: -5.2% — ports losing to all classes
+  - Activity: 8.44% → NORMAL mode
+- **Prediction: ~85 ± 4 raw** (range 81-89). Favorable S→S (0.348) suggests a predictable round. To beat leader (177.1), need ≥85.19 raw. Weighted at 85 = 176.7. At 87 = 180.9 (new best!).
+- **Score: 92.53 raw (weighted 192.37)** — BEST EVER by huge margin
+  - Per-seed: 91.90, 93.13, 91.51, 92.47, 93.64 — all above 91!
+  - Rank: 25 (leaderboard may be recalculating)
+  - Previous best: R13 = 90.10 (169.90 weighted)
+  - **Key takeaway**: V10 (U-Net blend + M5 bucket temps) is a massive improvement. High S→S (0.348) round was favorable, but the model also generalized well across all 5 seeds (tight spread: 91.5-93.6).
+
+### Round 16
+- Round ID: 8f664aed-8839-4c85-bed0-77a2cac7c6f5
+- Round weight: 2.1829 (1.05^16)
+- Map: 40×40, 5 seeds. Settlements: 58, 43, 50, 35, 37. Ports: 4, 1, 1, 0, 0.
+- Model: **V10 + overlay fix** — same GBM+MLP/U-Net blend + two key changes:
+  - PROB_FLOOR: 0.0001 → 0.0003 (LORO +0.066 avg)
+  - Bayesian overlay: (5,100) → (0.5,3) — backtest showed +2.72 avg on R2-R15 GT
+- 50/50 queries used (45 grid + 5 repeat on seed 0, highest settlement count 58)
+- **Observed transition diagnostics**:
+  - E→E: +7.6% above historical — less expansion than usual
+  - E→S: -5.3% — settlements expanding less
+  - S→S: 0.270 (vs 0.318 historical) — below-average retention
+  - F→F: +12.7% — strong forest retention
+  - S→F: +3.8% — settlements being reclaimed by forest
+  - P→E: +19.0%, P→P: -11.2% — ports very volatile
+  - Activity: 0.00% → NORMAL mode
+- **Score: 71.51 raw (weighted 156.10)** — WORST since R8. Rank 171/272.
+  - Per-seed: 67.75, 75.10, 74.24, 66.52, 73.94
+  - **Root cause**: Aggressive overlay change (5,100)→(0.5,3) cost 15.5 points. Old settings would have scored 87.00.
+  - On this volatile round (S→S=0.270), observations were misleading. Aggressive overlay pushed predictions toward noisy obs.
+  - **REVERTED** overlay to (5,100) and floor to 0.0001 for R17+
+  - Leaderboard still led by R15 = 192.37 weighted (unchanged)
+
+### Round 17
+- Round ID: 3eb0c25d-28fa-48ca-b8e1-fc249e3918e9
+- Round weight: 2.2920 (1.05^17) — closing target was stale; live leader after close is 217.38 weighted
+- Map: 40×40, 5 seeds. S→S=0.448 (very high retention), Activity=14.26%
+- Model: **V10 + calibration/temps optimization** (models retrained on R1-R16):
+  - CALIBRATION_FACTORS: [1,1,1,1,0.95,1] → [1,1,1,1,1,1] (Mountain calibration removed)
+  - All ENTROPY_BUCKET_TEMPS: per-class optimized values → np.ones(6) (effectively disabled)
+  - Combined improvement validated: +0.272 avg on R9-R16 (91.241 → 91.513)
+  - Per-round validation (E=combined): R9=93.92, R10=94.60, R11=91.93, R12=81.84, R13=93.33, R14=91.43, R15=94.40, R16=90.65
+  - Models freshly retrained on all R1-R16 data
+- 50/50 queries used
+- **Score: 84.7388 raw (weighted 194.22)** — new personal best weighted score, but not enough to catch the new leader
+  - Rank: 96/283
+  - Per-seed: 86.6977, 86.1768, 83.0849, 85.0461, 82.6886
+  - Would have missed the current 217.38 leader by 23.15 weighted
+  - R17 beat R15 on weighted score (194.22 vs 192.37), so the resubmission/revert recovered a new best, just not a podium-level one
+
+### Scoring & Strategy Correction (post-R17)
+- **Round weight growth does NOT help us catch the leader**: Weight = 1.05^n applies to ALL teams equally. If the leader also scores 85 raw on R20, their weighted = 85 × 2.653 = 225.5, pulling further ahead. Higher weights amplify the gap, not close it.
+- **What actually matters**: Peak raw score relative to the leader's peak raw score. Leader's 217.38 weighted ÷ their round weight = their best raw score. We need to OUTSCORE them on raw in the same round (or a round where they underperform).
+- **Our raw ceiling**: R9=90.6, R10=91.6, R13=90.1, R15=92.5. We can hit 90+ on favorable rounds. The leader likely hit ~93-95 raw on their best round. Gap is 1-3 raw points.
+- **Priority**: Maximize peak raw score through clean execution + retrained models. No experiments mid-round (R16 overlay change cost 15.5 raw points).
+
+### Multi-Round Retraining (R1-R17)
+
+**GBM+MLP LORO (R1-R17, 85 seeds, 136K cells):**
+| Round | Spatial | +Sim | Baseline |
+|-------|---------|------|----------|
+| R1 | 85.68 | 85.37 | 69.61 |
+| R2 | 89.48 | 89.85 | 73.35 |
+| R3 | 87.60 | 87.58 | 52.29 |
+| R4 | 90.33 | 90.67 | 87.17 |
+| R5 | 84.16 | 83.02 | 67.06 |
+| R6 | 84.30 | 84.28 | 52.70 |
+| R7 | 68.54 | 67.02 | 40.71 |
+| R8 | 81.90 | 87.77 | 75.07 |
+| R9 | 90.97 | 90.99 | 82.87 |
+| R10 | 91.19 | 91.26 | 65.89 |
+| R11 | 84.07 | 85.30 | 50.15 |
+| R12 | 58.34 | 56.48 | 24.09 |
+| R13 | 91.96 | 91.77 | 84.60 |
+| R14 | 80.21 | 79.18 | 38.62 |
+| R15 | 91.33 | 91.83 | 77.80 |
+| R16 | 83.01 | 82.50 | 75.35 |
+| R17 | 86.29 | 86.99 | 56.55 |
+| **Avg** | **84.08** | **84.23** | **63.17** |
+
+- Previous R1-R16 avg was spatial=83.31, +sim=83.62. Adding R17 improved avg by +0.77/+0.61.
+- R17 LORO: spatial=86.29, +sim=86.99 (strong out-of-sample performance)
+
+**U-Net LORO (R1-R17, 85 seeds, TTA):**
+| Round | UNet | +TTA |
+|-------|------|------|
+| R1 | 80.18 | 81.60 |
+| R2 | 84.60 | 85.70 |
+| R3 | 87.91 | 88.29 |
+| R4 | 91.57 | 92.13 |
+| R5 | 83.47 | 83.95 |
+| R6 | 82.74 | 83.65 |
+| R7 | 71.71 | 73.36 |
+| R8 | 83.16 | 83.50 |
+| R9 | 92.81 | 93.27 |
+| R10 | 90.92 | 91.35 |
+| R11 | 82.32 | 83.69 |
+| R12 | 48.71 | 51.75 |
+| R13 | 92.14 | 92.70 |
+| R14 | 76.06 | 76.78 |
+| R15 | 91.07 | 92.04 |
+| R16 | 84.96 | 86.31 |
+| R17 | 82.31 | 83.71 |
+| **Avg** | **82.74** | **83.75** |
+
+- Models saved: `data/spatial_model.pkl`, `data/mlp_model.pt`, `data/unet_model.pt`
+- All trained on R1-R17 (17 rounds, 85 seeds)
+

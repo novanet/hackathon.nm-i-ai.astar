@@ -22,29 +22,62 @@ from .replay import (
 )
 
 PROB_FLOOR = 0.0001
+SIM_BLEND_ALPHA = 0.15  # Simulator blend weight (LORO: +1.0 avg at 0.15-0.20)
+UNET_BLEND_W = 0.90     # U-Net weight in blend (0.0=GBM-only, 1.0=UNet-only)
+
+# Adaptive blend gate: reduce U-Net weight on boom rounds (high S→S)
+# where U-Net historically underperforms GBM (R12, R14).
+ADAPTIVE_BLEND = True    # Enable adaptive blend gate
+BLEND_SS_CENTER = 0.42   # S→S threshold center for sigmoid gate
+BLEND_SS_SCALE = 30.0    # Sigmoid steepness (higher = sharper transition)
+BLEND_UNET_MIN = 0.55    # Minimum U-Net weight on extreme boom rounds
+BLEND_UNET_MAX = 0.90    # Maximum U-Net weight on normal rounds
+
+
+def adaptive_blend_weight(round_feats: np.ndarray) -> float:
+    """Compute U-Net blend weight based on round characteristics.
+    
+    Uses a sigmoid gate on S→S rate: normal rounds get high U-Net weight,
+    boom rounds (S→S > 0.42) smoothly ramp down to BLEND_UNET_MIN.
+    """
+    ss = round_feats[1]  # S→S feature
+    # Sigmoid: 1 when ss << center, 0 when ss >> center
+    gate = 1.0 / (1.0 + np.exp(BLEND_SS_SCALE * (ss - BLEND_SS_CENTER)))
+    return BLEND_UNET_MIN + (BLEND_UNET_MAX - BLEND_UNET_MIN) * gate
 
 # Historical transition matrix derived from all rounds backtesting.
 # Used as fallback when no observations are available for the current round.
-# Rows = initial class, Cols = final class.  (calibrated on R1-R9)
+# Rows = initial class, Cols = final class.  (calibrated on R1-R12)
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 HISTORICAL_TRANSITIONS = np.array([
-    [0.8503, 0.1010, 0.0075, 0.0106, 0.0305, 0.0000],  # Empty →
-    [0.4623, 0.2912, 0.0038, 0.0260, 0.2168, 0.0000],  # Settlement →
-    [0.4899, 0.0857, 0.1667, 0.0215, 0.2361, 0.0000],  # Port →
+    [0.8400, 0.1123, 0.0076, 0.0108, 0.0293, 0.0000],  # Empty →
+    [0.4405, 0.3183, 0.0043, 0.0262, 0.2107, 0.0000],  # Settlement →
+    [0.4819, 0.0909, 0.1736, 0.0214, 0.2322, 0.0000],  # Port →
     [0.5000, 0.0000, 0.0000, 0.5000, 0.0000, 0.0000],  # Ruin → (no data)
-    [0.0822, 0.1290, 0.0087, 0.0135, 0.7666, 0.0000],  # Forest →
+    [0.0775, 0.1429, 0.0089, 0.0137, 0.7571, 0.0000],  # Forest →
     [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
 ])
 
-# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R9 (6 obs rounds).
+# Recency-weighted transitions: 2× weight on R11-R12 (high-settlement era).
+# Used when observations suggest high settlement retention (S→S > 0.35).
+RECENT_TRANSITIONS = np.array([
+    [0.8200, 0.1200, 0.0080, 0.0090, 0.0430, 0.0000],  # Empty →
+    [0.3600, 0.4300, 0.0040, 0.0240, 0.1820, 0.0000],  # Settlement →
+    [0.4200, 0.1000, 0.2200, 0.0210, 0.2390, 0.0000],  # Port →
+    [0.5000, 0.0000, 0.0000, 0.5000, 0.0000, 0.0000],  # Ruin →
+    [0.0650, 0.1600, 0.0090, 0.0120, 0.7540, 0.0000],  # Forest →
+    [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 1.0000],  # Mountain →
+])
+
+# Shrinkage matrix: GT/obs ratio per transition, computed from R1-R12 (9 obs rounds).
 # Multiplied with observed transitions to debias toward GT distribution.
 # Values >1 mean GT is higher than single-run observations (more stable).
 SHRINKAGE_MATRIX = np.array([
-    [1.0029, 0.9768, 1.1921, 0.8922, 0.9346, 1.0000],  # Empty →
-    [0.9698, 1.0375, 1.2656, 0.8710, 0.9846, 1.0000],  # Settlement →
-    [1.0128, 0.6722, 0.5610, 0.4733, 0.8608, 1.0000],  # Port →
+    [1.0031, 0.9573, 1.1921, 0.9498, 0.9357, 1.0000],  # Empty →
+    [0.9695, 1.0358, 1.2976, 0.9744, 1.0288, 1.0000],  # Settlement →
+    [1.0565, 0.6038, 0.5741, 0.4733, 0.8401, 1.0000],  # Port →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Ruin →
-    [1.0726, 1.0096, 0.9197, 0.8997, 0.9962, 1.0000],  # Forest →
+    [1.0389, 1.0028, 1.1572, 0.8997, 0.9966, 1.0000],  # Forest →
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000],  # Mountain →
 ])
 
@@ -54,6 +87,31 @@ def debias_transitions(observed_trans: np.ndarray) -> np.ndarray:
     debiased = observed_trans * SHRINKAGE_MATRIX
     row_sums = np.maximum(debiased.sum(axis=1, keepdims=True), 1e-10)
     return debiased / row_sums
+
+
+_learned_debiaser = None
+
+def _load_learned_debiaser():
+    """Load learned feature correction model if available."""
+    global _learned_debiaser
+    if _learned_debiaser is not None:
+        return _learned_debiaser
+    import pickle
+    path = Path(__file__).parent.parent / "data" / "learned_debiaser.pkl"
+    if path.exists():
+        _learned_debiaser = pickle.loads(path.read_bytes())
+        return _learned_debiaser
+    return None
+
+
+def correct_round_features(features: np.ndarray) -> np.ndarray:
+    """Apply learned correction to round features if available.
+    Maps observation-derived features closer to GT-derived features."""
+    debiaser = _load_learned_debiaser()
+    if debiaser is None:
+        return features
+    corrected = debiaser.predict(features.reshape(1, -1))[0]
+    return corrected
 
 
 def initial_prior(round_detail: dict, seed_index: int,
@@ -271,10 +329,11 @@ def compute_cell_features(init_grid: list[list[int]],
     """
     Compute spatial features for every cell from the initial state.
 
-    Features per cell (23 spatial + up to 8 round-level = 31 total):
+    Features per cell (29 spatial + up to 8 round-level = 37 total):
       - initial class one-hot (6)
       - 3×3 neighborhood class fractions (6), normalized
       - 5×5 outer ring class fractions (6), normalized
+      - 7×7 outer ring class fractions (6), normalized
       - distance to nearest settlement (1), normalized by map size
       - distance to nearest forest (1), normalized
       - distance to nearest port (1), normalized
@@ -283,11 +342,11 @@ def compute_cell_features(init_grid: list[list[int]],
       - [optional] round-level features (8): E→E, S→S, F→F, E→S, settlement_density,
         mean_food, mean_wealth, mean_defense
 
-    Returns: (H, W, 23 or 31) feature array
+    Returns: (H, W, 29 or 37) feature array
     """
     from scipy.ndimage import distance_transform_edt
 
-    n_spatial = 6 + 6 + 6 + 5  # 23 spatial features (22 + edge_dist)
+    n_spatial = 6 + 6 + 6 + 6 + 5  # 29 spatial features (one-hot + 3x3 + 5x5 + 7x7 + dist/count)
     n_round = len(round_features) if round_features is not None else 0
     n_feat = n_spatial + n_round
     features = np.zeros((map_h, map_w, n_feat), dtype=np.float64)
@@ -348,6 +407,19 @@ def compute_cell_features(init_grid: list[list[int]],
                 features[y, x, idx:idx+6] /= n5
             idx += 6
 
+            # 7×7 outer ring counts (excluding 5×5 inner)
+            for dy in range(-3, 4):
+                for dx in range(-3, 4):
+                    if abs(dy) <= 2 and abs(dx) <= 2:
+                        continue
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < map_h and 0 <= nx < map_w:
+                        features[y, x, idx + cls_grid[ny, nx]] += 1.0
+            n7 = features[y, x, idx:idx+6].sum()
+            if n7 > 0:
+                features[y, x, idx:idx+6] /= n7
+            idx += 6
+
             # Distance features (normalized to [0, 1])
             features[y, x, idx] = dist_settlement[y, x] / max_dist
             features[y, x, idx + 1] = dist_forest[y, x] / max_dist
@@ -385,6 +457,36 @@ def _load_mlp_model():
     mlp.load_state_dict(checkpoint["state_dict"])
     mlp.eval()
     return mlp
+
+
+_unet_model = None
+
+def _load_unet_model():
+    """Load the trained U-Net model from disk, or return None."""
+    global _unet_model
+    if _unet_model is not None:
+        return _unet_model
+    import torch
+    unet_path = Path(__file__).parent.parent / "data" / "unet_model.pt"
+    if not unet_path.exists():
+        return None
+    from astar.unet import UNet
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(unet_path, map_location=device, weights_only=True)
+    model = UNet(
+        in_channels=checkpoint["in_channels"],
+        n_classes=checkpoint["n_classes"],
+        base_channels=checkpoint.get("base_channels", 32),
+        dropout=checkpoint.get("dropout", 0.1),
+        n_levels=checkpoint.get("n_levels", 2),
+        use_film=checkpoint.get("use_film", False),
+        use_attention=checkpoint.get("use_attention", False),
+    ).to(device)
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+    _unet_model = model
+    print("  [model] Loaded U-Net")
+    return _unet_model
 
 
 def load_spatial_model():
@@ -508,8 +610,18 @@ def observation_calibrated_transitions(round_id: str, round_detail: dict,
     if total_obs == 0:
         return None
 
-    # Bayesian blend: historical prior (weighted by smoothing) + observations
-    prior_counts = HISTORICAL_TRANSITIONS * smoothing
+    # Detect high settlement retention from raw observations
+    s_row_total = obs_counts[1].sum()
+    obs_ss_rate = obs_counts[1, 1] / s_row_total if s_row_total > 20 else 0.0
+
+    # Use recency-weighted prior when observations suggest high S→S
+    if obs_ss_rate > 0.35:
+        prior = RECENT_TRANSITIONS
+    else:
+        prior = HISTORICAL_TRANSITIONS
+
+    # Bayesian blend: prior (weighted by smoothing) + observations
+    prior_counts = prior * smoothing
     blended = prior_counts + obs_counts
     row_sums = np.maximum(blended.sum(axis=1, keepdims=True), 1e-10)
     return blended / row_sums
@@ -753,6 +865,46 @@ def _cell_observation_frequencies(round_id: str, round_detail: dict,
     return obs_freq, obs_count
 
 
+# Adaptive Bayesian overlay constants
+# NOTE: (0.5, 3.0) won backtest on R2-R15 but catastrophically hurt on R16 (-15.5 pts)
+# Reverting to conservative (5, 100) which barely moves predictions but doesn't hurt
+_BAYES_MIN_PS = 5.0    # prior_strength for most uncertain cells
+_BAYES_MAX_PS = 200.0  # prior_strength for most confident cells (swept: 200 > 100 by +0.034)
+
+
+def _adaptive_bayesian_overlay(round_id: str, seed_index: int,
+                                pred: np.ndarray,
+                                map_w: int = 40, map_h: int = 40) -> np.ndarray:
+    """
+    Per-cell adaptive Bayesian update using simulation observations.
+    Cells where the model is uncertain get lower prior_strength (trust observations more).
+    Cells where the model is confident get higher prior_strength (trust model more).
+    """
+    obs_grid = build_observation_grid(round_id, seed_index, map_w, map_h)
+    result = pred.copy()
+    H, W, C = pred.shape
+    max_ent = np.log(C)
+
+    # Compute per-cell entropy
+    eps = 1e-10
+    p = np.clip(pred, eps, 1.0)
+    entropy = -np.sum(p * np.log(p), axis=-1)
+
+    for y in range(H):
+        for x in range(W):
+            obs = obs_grid[y][x]
+            if not obs:
+                continue
+            norm_ent = entropy[y, x] / max_ent
+            ps = _BAYES_MAX_PS - (_BAYES_MAX_PS - _BAYES_MIN_PS) * norm_ent
+            alpha = result[y, x] * ps
+            for cls in obs:
+                alpha[cls] += 1.0
+            result[y, x] = alpha / alpha.sum()
+
+    return result
+
+
 def build_prediction(round_id: str, round_detail: dict, seed_index: int,
                      map_w: int = 40, map_h: int = 40) -> np.ndarray:
     """
@@ -778,32 +930,71 @@ def build_prediction(round_id: str, round_detail: dict, seed_index: int,
     # 3. Round-level features for spatial model (now includes settlement stats)
     round_feats = compute_round_features(debiased_trans, round_detail,
                                          settlement_stats=sett_stats)
+    round_feats = correct_round_features(round_feats)
 
     # 4. Spatial model (pure — subsumes transition blending)
     pred = spatial_prior(round_detail, seed_index, map_w, map_h,
                          round_features=round_feats)
+
+    # 4b. U-Net blend: if U-Net is available, blend with spatial model
+    unet = _load_unet_model()
+    if unet is not None and pred is not None:
+        from astar.unet import predict_unet_with_tta
+        init_grid = round_detail["initial_states"][seed_index]["grid"]
+        unet_pred = predict_unet_with_tta(unet, init_grid, map_w, map_h, round_feats)
+        unet_pred = np.maximum(unet_pred, 1e-10)
+        unet_pred = unet_pred / unet_pred.sum(axis=-1, keepdims=True)
+        # Adaptive blend: reduce U-Net weight on boom rounds
+        if ADAPTIVE_BLEND:
+            w = adaptive_blend_weight(round_feats)
+        else:
+            w = UNET_BLEND_W
+        pred = (1 - w) * pred + w * unet_pred
+        pred = pred / pred.sum(axis=-1, keepdims=True)
 
     # 5. Fallback if no spatial model
     if pred is None:
         trans = debiased_trans if debiased_trans is not None else HISTORICAL_TRANSITIONS
         pred = _apply_transition_matrix(round_detail, seed_index, trans, map_w, map_h)
 
+    # 5a. Simulator blend DISABLED — adaptive Bayesian overlay (step 6b) supersedes it.
+    #     Tested: alpha=0 beats alpha=0.15 on all R9-R12 after overlay is applied.
+    #     Keeping code for reference but skipping execution.
+    # trans_for_sim = debiased_trans if debiased_trans is not None else HISTORICAL_TRANSITIONS
+    # try:
+    #     from simulator import (params_from_transition_matrix,
+    #                            simulate_monte_carlo_vectorized, grid_to_numpy)
+    #     ...
+    # except Exception:
+    #     pass
+
     # 5b. Post-model calibration: correct systematic Settlement/Port/Ruin overestimation
     #     Model consistently over-predicts S/P/R and under-predicts E (verified in LORO audit)
     pred = pred * CALIBRATION_FACTORS[np.newaxis, np.newaxis, :]
     pred = pred / pred.sum(axis=-1, keepdims=True)
 
-    # 6. Adaptive per-class temperature scaling
-    #    Detect collapse rounds (S→S < 0.15) and use softer temps for settlements
-    ss_rate = round_feats[1]  # S→S feature
-    if ss_rate < 0.15:
-        # Collapse round: minimal softening (T=1.05 optimal from sweep)
-        adaptive_temps = np.array([1.05, 1.05, 1.05, 1.0, 1.05, 1.0])
+    # 6. Temperature scaling (two modes, controlled by USE_ENTROPY_TEMPS flag)
+    if USE_ENTROPY_TEMPS:
+        # 6-M5: Entropy-conditional per-class temperature scaling
+        #        Each cell gets temps from its entropy bucket (static/low/medium/high)
+        pred = entropy_bucket_temperature_scale(pred)
     else:
-        adaptive_temps = PER_CLASS_TEMPS
-    pred = per_class_temperature_scale(pred, round_detail, seed_index,
-                                       temps=adaptive_temps,
-                                       map_w=map_w, map_h=map_h)
+        # 6-legacy: Adaptive per-class temperature scaling
+        #    Detect collapse rounds (S→S < 0.15) and high-retention rounds (S→S > 0.40)
+        ss_rate = round_feats[1]  # S→S feature
+        if ss_rate < 0.15:
+            adaptive_temps = np.array([1.05, 1.05, 1.05, 1.0, 1.05, 1.0])
+        elif ss_rate > 0.40:
+            adaptive_temps = np.array([1.10, 0.95, 1.10, 1.0, 1.10, 1.0])
+        else:
+            adaptive_temps = PER_CLASS_TEMPS
+        pred = per_class_temperature_scale(pred, round_detail, seed_index,
+                                           temps=adaptive_temps,
+                                           map_w=map_w, map_h=map_h)
+
+    # 6b. Adaptive Bayesian observation overlay: blend per-cell observations
+    #     with model predictions. Uncertain cells → trust observation more.
+    pred = _adaptive_bayesian_overlay(round_id, seed_index, pred, map_w, map_h)
 
     # 7. Floor enforcement
     return apply_floor(pred)
@@ -815,9 +1006,55 @@ TEMPERATURE = 1.10  # calibrated via LORO CV; T>1 softens predictions
 # Order: Empty, Settlement, Port, Ruin, Forest, Mountain
 PER_CLASS_TEMPS = np.array([1.10, 1.05, 1.10, 1.0, 1.10, 1.0])
 
-# Post-model calibration: swept for 50/50 blend on R2-R9 with GT.
-# E-1.0/F-0.95 gives best avg (88.29). Empty bias corrected by blend ratio change.
-CALIBRATION_FACTORS = np.array([1.0, 1.0, 1.0, 1.0, 0.95, 1.0])
+# Post-model calibration: R17+ sweep on R9-R16 GT with R1-R16 models showed
+# removing all calibration improves avg by +0.070 (91.311 vs 91.241).
+# Combined with temps=1.0, total improvement = +0.272.
+CALIBRATION_FACTORS = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+
+# --- M5 Regularized Bucket Temperatures (KL-optimized) ---
+# Each cell is assigned to a bucket by its predicted entropy, then gets per-class temps.
+# Fitted via LORO on LGB-only baseline; validated +0.33 LORO avg.
+USE_ENTROPY_TEMPS = True  # Toggle: True = M5 bucket temps, False = legacy adaptive temps
+
+ENTROPY_BUCKET_BOUNDS = [
+    (0.0, 0.1, 'static'),
+    (0.1, 0.4, 'low'),
+    (0.4, 0.8, 'medium'),
+    (0.8, 2.0, 'high'),
+]
+
+# R17+ sweep: setting all temps to 1.0 improved avg by +0.226 on R9-R16.
+# Original values overfitted to R1-R15 LGB-only baseline; new R1-R16 GBM+MLP+UNet
+# models are better calibrated and don't benefit from temp adjustments.
+ENTROPY_BUCKET_TEMPS = {
+    'static': np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+    'low':    np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+    'medium': np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+    'high':   np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+}
+
+
+def entropy_bucket_temperature_scale(pred: np.ndarray) -> np.ndarray:
+    """Apply per-class temperature scaling conditioned on each cell's predicted entropy.
+    Cells are bucketed by entropy, then each bucket gets its own per-class temps."""
+    H, W, C = pred.shape
+    eps = 1e-10
+    p = np.clip(pred, eps, 1.0)
+    entropy = -np.sum(p * np.log(p), axis=-1)  # (H, W)
+
+    result = pred.copy()
+    for lo, hi, name in ENTROPY_BUCKET_BOUNDS:
+        temps = ENTROPY_BUCKET_TEMPS[name]
+        mask = (entropy >= lo) & (entropy < hi)  # (H, W)
+        if not mask.any():
+            continue
+        # Check if all temps are 1.0 (no-op)
+        if np.allclose(temps, 1.0):
+            continue
+        cells = result[mask]  # (N, 6)
+        scaled = np.power(np.maximum(cells, 1e-30), 1.0 / temps[np.newaxis, :])
+        result[mask] = scaled / scaled.sum(axis=-1, keepdims=True)
+    return result
 
 
 def temperature_scale(pred: np.ndarray, T: float | None = None) -> np.ndarray:

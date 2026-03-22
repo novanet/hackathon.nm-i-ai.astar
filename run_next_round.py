@@ -3,7 +3,8 @@ Generic next-round solver: find active round, query, predict, submit, iterate.
 Replaces per-round scripts (run_r7.py, run_r8.py, etc).
 
 Usage: $env:ASTAR_TOKEN = "your-jwt"; python run_next_round.py
-       $env:ASTAR_TOKEN = "your-jwt"; python run_next_round.py --round-id <id>
+    $env:ASTAR_TOKEN = "your-jwt"; python run_next_round.py --round-id <id>
+    $env:ASTAR_TOKEN = "your-jwt"; python run_next_round.py --no-submit
 """
 
 import argparse
@@ -32,6 +33,32 @@ GRID_POSITIONS = [
 ]
 
 
+def iter_grid_queries(n_seeds: int):
+    """Yield grid queries in a seed-balanced order.
+
+    Position-first ordering means a partial budget is spread across all seeds
+    before any seed receives a second grid row/column advantage.
+    """
+    for vx, vy in GRID_POSITIONS:
+        for seed_idx in range(n_seeds):
+            yield seed_idx, vx, vy
+
+
+def diagnostic_viewport_for_seed(state: dict, map_w: int, map_h: int, size: int = 15) -> tuple[int, int]:
+    """Pick a repeat viewport centered on the seed's active settlement cluster."""
+    alive = [s for s in state.get("settlements", []) if s.get("alive")]
+    if not alive:
+        return min(13, max(0, map_w - size)), min(13, max(0, map_h - size))
+
+    mean_x = sum(s["x"] for s in alive) / len(alive)
+    mean_y = sum(s["y"] for s in alive) / len(alive)
+    max_x = max(0, map_w - size)
+    max_y = max(0, map_h - size)
+    vx = min(max(int(round(mean_x)) - size // 2, 0), max_x)
+    vy = min(max(int(round(mean_y)) - size // 2, 0), max_y)
+    return vx, vy
+
+
 def find_active_round() -> dict | None:
     """Find the current active round."""
     rounds = _request("GET", "/rounds")
@@ -55,20 +82,28 @@ def print_round_info(detail: dict, round_number: int, round_id: str, closes_at: 
         print(f"  Seed {i}: {setts} settlements, {ports} ports")
 
 
-def query_grid(round_id: str, n_seeds: int, map_w: int, map_h: int) -> int:
-    """Run 9-viewport grid on all seeds. Returns number of queries used."""
+def query_grid(round_id: str, n_seeds: int, map_w: int, map_h: int,
+               max_queries: int | None = None) -> int:
+    """Run a full or partial 9-viewport grid. Returns number of queries used."""
+    plan = list(iter_grid_queries(n_seeds))
+    if max_queries is not None:
+        plan = plan[:max_queries]
+
     count = 0
-    for seed_idx in range(n_seeds):
-        for vx, vy in GRID_POSITIONS:
-            w = min(15, map_w - vx)
-            h = min(15, map_h - vy)
-            try:
-                simulate(round_id, seed_idx, vx, vy, w, h)
-                count += 1
-            except Exception as e:
-                print(f"  ERROR seed {seed_idx} ({vx},{vy}): {e}")
-            time.sleep(0.05)
-        print(f"  Seed {seed_idx}: 9 viewports done")
+    per_seed = [0] * n_seeds
+    for seed_idx, vx, vy in plan:
+        w = min(15, map_w - vx)
+        h = min(15, map_h - vy)
+        try:
+            simulate(round_id, seed_idx, vx, vy, w, h)
+            count += 1
+            per_seed[seed_idx] += 1
+        except Exception as e:
+            print(f"  ERROR seed {seed_idx} ({vx},{vy}): {e}")
+        time.sleep(0.05)
+
+    for seed_idx, seed_count in enumerate(per_seed):
+        print(f"  Seed {seed_idx}: {seed_count} grid viewports done")
     return count
 
 
@@ -90,11 +125,18 @@ def diagnose_observations(round_id: str, detail: dict, map_w: int, map_h: int):
             changes = ", ".join(f"{n}:{d:+.1%}" for n, d in big)
             print(f"  {CLASS_NAMES[c]:>10} → {changes}")
 
-    # Activity detection
+    # Activity detection: check both E→E and S→S
     diag = cal[0, 0] - hist[0, 0]  # Empty→Empty delta
     activity = max(0, -diag)
-    mode = "HIGH-ACTIVITY" if activity >= 0.10 else "NORMAL"
-    print(f"  Activity: {activity:.2%} → {mode} mode")
+    ss_obs = cal[1, 1]
+    ss_hist = hist[1, 1]
+    if ss_obs > 0.40:
+        mode = "HIGH-RETENTION"
+    elif activity >= 0.10:
+        mode = "HIGH-ACTIVITY"
+    else:
+        mode = "NORMAL"
+    print(f"  Activity: {activity:.2%}, S→S: {ss_obs:.3f} (hist {ss_hist:.3f}) → {mode} mode")
 
 
 def submit_all(round_id: str, detail: dict, n_seeds: int,
@@ -118,44 +160,39 @@ def submit_all(round_id: str, detail: dict, n_seeds: int,
 
 def spend_extra_queries(round_id: str, detail: dict, remaining: int,
                         map_w: int, map_h: int) -> int:
-    """Spend remaining budget on extra observations. Returns count used."""
+    """Spend remaining budget on per-seed diagnostic repeats near settlement clusters.
+
+    The goal is to reduce noise in round classification features such as S→S and
+    high-activity/retention detection, rather than adding a second full-grid pass
+    on a single seed.
+    """
     if remaining <= 0:
         return 0
 
-    n_seeds = len(detail.get("initial_states", []))
-    # Sort seeds by settlement count (most dynamic first)
-    seed_dynamics = []
-    for i, state in enumerate(detail["initial_states"]):
+    seed_targets = []
+    for seed_idx, state in enumerate(detail["initial_states"]):
         n_setts = len([s for s in state["settlements"] if s["alive"]])
-        seed_dynamics.append((n_setts, i))
-    seed_dynamics.sort(reverse=True)
+        vx, vy = diagnostic_viewport_for_seed(state, map_w, map_h)
+        seed_targets.append((n_setts, seed_idx, vx, vy))
+    seed_targets.sort(reverse=True)
 
-    # Offset viewports that overlap between standard grid positions
-    extra_viewports = [
-        (7, 7, 15, 15),   # center-shifted
-        (7, 20, 15, 15),  # mid-bottom-shifted
-        (20, 7, 15, 15),  # right-mid-shifted
-        (20, 20, 15, 15), # bottom-right shifted
-        (3, 3, 15, 15),   # top-left interior
-    ]
+    print("\n=== Diagnostic Repeat Targets ===")
+    for n_setts, seed_idx, vx, vy in seed_targets:
+        print(f"  Seed {seed_idx}: {n_setts} settlements -> viewport ({vx},{vy})")
 
     count = 0
-    vp_idx = 0
-    for _, seed_idx in seed_dynamics:
-        if count >= remaining:
-            break
-        vx, vy, w, h = extra_viewports[vp_idx % len(extra_viewports)]
-        w = min(w, map_w - vx)
-        h = min(h, map_h - vy)
+    while count < remaining and seed_targets:
+        _, seed_idx, vx, vy = seed_targets[count % len(seed_targets)]
+        w = min(15, map_w - vx)
+        h = min(15, map_h - vy)
         try:
             simulate(round_id, seed_idx, vx, vy, w, h)
-            print(f"  Extra: seed {seed_idx} ({vx},{vy})")
+            print(f"  Diagnostic repeat: seed {seed_idx} ({vx},{vy})")
             count += 1
         except Exception as e:
-            print(f"  Extra failed seed {seed_idx}: {e}")
+            print(f"  Repeat failed seed {seed_idx} ({vx},{vy}): {e}")
             break
         time.sleep(0.05)
-        vp_idx += 1
 
     return count
 
@@ -186,6 +223,8 @@ def main():
     parser.add_argument("--round-id", help="Override round ID (otherwise finds active)")
     parser.add_argument("--skip-queries", action="store_true",
                         help="Skip querying, use existing observations")
+    parser.add_argument("--no-submit", action="store_true",
+                        help="Query and diagnose only; do not submit predictions")
     args = parser.parse_args()
 
     # Find round
@@ -230,22 +269,28 @@ def main():
     remaining = total - used
 
     # Phase 1: Grid queries
-    if not args.skip_queries and remaining >= queries_needed:
-        print(f"\n=== Querying {n_seeds} seeds (9 viewports each) ===")
-        query_grid(round_id, n_seeds, map_w, map_h)
+    if not args.skip_queries and remaining > 0:
+        grid_queries = min(remaining, queries_needed)
+        mode = "full" if grid_queries == queries_needed else "partial"
+        print(f"\n=== Querying grid: {grid_queries}/{queries_needed} viewports ({mode}) ===")
+        query_grid(round_id, n_seeds, map_w, map_h, max_queries=grid_queries)
         budget = get_budget()
         remaining = budget["queries_max"] - budget["queries_used"]
         print(f"Budget after grid: {budget['queries_used']}/{budget['queries_max']}")
     elif args.skip_queries:
         print("Skipping queries (--skip-queries)")
     else:
-        print(f"Skipping grid — only {remaining} remaining (need {queries_needed})")
+        print("Skipping grid — no remaining budget")
 
     # Diagnostics
     diagnose_observations(round_id, detail, map_w, map_h)
 
     # Phase 2: Submit pass 1
-    submit_all(round_id, detail, n_seeds, map_w, map_h, "pass 1")
+    if args.no_submit:
+        print("\n=== No-Submit Mode ===")
+        print("Skipping pass 1 submission; observations only.")
+    else:
+        submit_all(round_id, detail, n_seeds, map_w, map_h, "pass 1")
 
     # Phase 3: Extra queries with remaining budget
     budget = get_budget()
@@ -255,7 +300,10 @@ def main():
         spend_extra_queries(round_id, detail, remaining, map_w, map_h)
 
         # Resubmit with extra observations
-        submit_all(round_id, detail, n_seeds, map_w, map_h, "pass 2 + extra obs")
+        if args.no_submit:
+            print("Skipping pass 2 submission; observations only.")
+        else:
+            submit_all(round_id, detail, n_seeds, map_w, map_h, "pass 2 + extra obs")
 
     # Final summary
     print_final_summary(round_number, round_id)

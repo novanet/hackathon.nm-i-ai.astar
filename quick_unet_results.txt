@@ -1,0 +1,50 @@
+Device: cuda
+
+=== LOADING ALL ROUND DATA ===
+  R1: 5 seeds
+  R2: 5 seeds
+  R3: 5 seeds
+  R4: 5 seeds
+  R5: 5 seeds
+  R6: 5 seeds
+  R7: 5 seeds
+  R8: 5 seeds
+  R9: 5 seeds
+  R10: 5 seeds
+  R11: 5 seeds
+  R12: 5 seeds
+  R13: 5 seeds
+  R14: 5 seeds
+  R15: 5 seeds
+  R16: 5 seeds
+  R17: 5 seeds
+
+=== V1 (471,942 params) ===
+    R1: 80.62
+    R5: 85.10
+    R9: 93.34
+    R13: 92.52
+    R17: 83.43
+  5-fold avg: 87.00  [534s]
+
+=== V1_mix (471,942 params) ===
+    R1: 84.10
+    R5: 85.91
+    R9: 92.40
+    R13: 92.69
+    R17: 80.48
+  5-fold avg: 87.12  [959s]
+
+=== V2_48_2lev (1,056,582 params) ===
+    R1: 81.09
+    R5: 84.82
+    R9: 92.92
+    R13: 91.95
+    R17: 82.50
+  5-fold avg: 86.65  [423s]
+
+======================================================================
+          Config       R1       R5       R9      R13      R17      AVG
+              V1    80.62    85.10    93.34    92.52    83.43    87.00
+          V1_mix    84.10    85.91    92.40    92.69    80.48    87.12
+      V2_48_2lev    81.09    84.82    92.92    91.95    82.50    86.65

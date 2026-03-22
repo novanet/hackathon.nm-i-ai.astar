@@ -38,6 +38,15 @@ ROUND_IDS = {
     7: "36e581f1-73f8-453f-ab98-cbe3052b701b",
     8: "c5cdf100-a876-4fb7-b5d8-757162c97989",
     9: "2a341ace-0f57-4309-9b89-e59fe0f09179",
+    10: "75e625c3-60cb-4392-af3e-c86a98bde8c2",
+    11: "324fde07-1670-4202-b199-7aa92ecb40ee",
+    12: "795bfb1f-54bd-4f39-a526-9868b36f7ebd",
+    13: "7b4bda99-6165-4221-97cc-27880f5e6d95",
+    14: "d0a2c894-2162-4d49-86cf-435b9013f3b8",
+    15: "cc5442dd-bc5d-418b-911b-7eb960cb0390",
+    16: "8f664aed-8839-4c85-bed0-77a2cac7c6f5",
+    17: "3eb0c25d-28fa-48ca-b8e1-fc249e3918e9",
+    18: "b0f9d1bf-4b71-4e6e-816c-19c718d29056",
 }
 
 
@@ -108,10 +117,33 @@ def compute_gt_round_features(detail: dict, gts: list[np.ndarray]) -> np.ndarray
 
 
 ENTROPY_WEIGHT_POWER = 0.25  # entropy^power weighting for training samples
+USE_AUGMENTATION = False  # D4 augmentation HURTS GBM: LORO 82.46→82.19, R11-12 massive regression
 
-def build_training_data_multi(round_ids: dict[int, str], compute_weights: bool = False):
+
+def _augment_grid_gt(init_grid_np: np.ndarray, gt: np.ndarray):
+    """Generate D4 augmentations (4 rotations × 2 flips = 8 variants).
+    init_grid_np: (H, W) int array of terrain codes
+    gt: (H, W, 6) float array of probabilities
+    Yields (augmented_grid_np, augmented_gt) tuples.
+    """
+    for k in range(4):
+        g = np.rot90(init_grid_np, k=k)
+        t = np.rot90(gt, k=k, axes=(0, 1))
+        yield g, t
+        # Horizontal flip
+        yield np.fliplr(g), np.flip(t, axis=1)
+
+
+def _np_grid_to_list(grid_np: np.ndarray) -> list[list[int]]:
+    """Convert numpy grid back to list[list[int]] for compute_cell_features."""
+    return grid_np.tolist()
+
+
+def build_training_data_multi(round_ids: dict[int, str], compute_weights: bool = False,
+                              augment: bool = USE_AUGMENTATION):
     """Build feature matrix X and target matrix Y from multiple rounds.
     If compute_weights=True, also return entropy-based sample weights.
+    If augment=True, apply D4 augmentation (8× data).
     """
     X_parts = []
     Y_parts = []
@@ -131,16 +163,25 @@ def build_training_data_multi(round_ids: dict[int, str], compute_weights: bool =
 
         for seed_idx, gt in enumerate(gts):
             init_grid = detail["initial_states"][seed_idx]["grid"]
-            features = compute_cell_features(init_grid, map_w, map_h,
-                                             round_features=round_feats)
-            X_parts.append(features.reshape(-1, features.shape[-1]))
-            Y_parts.append(gt.reshape(-1, gt.shape[-1]))
-            if compute_weights:
-                # Entropy of GT distribution per cell — high-entropy cells matter more for scoring
-                p = np.clip(gt, 1e-10, 1.0)
-                entropy = -np.sum(p * np.log(p), axis=-1).flatten()
-                W_parts.append(np.power(entropy + 0.01, ENTROPY_WEIGHT_POWER))
-            round_labels.extend([(rnum, seed_idx)] * (map_w * map_h))
+            init_grid_np = np.array(init_grid)
+
+            if augment:
+                variants = list(_augment_grid_gt(init_grid_np, gt))
+            else:
+                variants = [(init_grid_np, gt)]
+
+            for aug_grid_np, aug_gt in variants:
+                aug_h, aug_w = aug_grid_np.shape
+                aug_grid_list = _np_grid_to_list(aug_grid_np)
+                features = compute_cell_features(aug_grid_list, aug_w, aug_h,
+                                                 round_features=round_feats)
+                X_parts.append(features.reshape(-1, features.shape[-1]))
+                Y_parts.append(aug_gt.reshape(-1, aug_gt.shape[-1]))
+                if compute_weights:
+                    p = np.clip(aug_gt, 1e-10, 1.0)
+                    entropy = -np.sum(p * np.log(p), axis=-1).flatten()
+                    W_parts.append(np.power(entropy + 0.01, ENTROPY_WEIGHT_POWER))
+                round_labels.extend([(rnum, seed_idx)] * (aug_w * aug_h))
 
     X = np.vstack(X_parts)
     Y = np.vstack(Y_parts)
@@ -189,7 +230,22 @@ def train_and_evaluate():
         map_h = test_detail.get("map_height", 40)
         test_round_feats = compute_gt_round_features(test_detail, test_gts)
         scores = []
+        scores_sim = []
         baseline_scores = []
+
+        # Sim params from GT transitions for this round
+        from simulator import params_from_transition_matrix, simulate_monte_carlo_vectorized, grid_to_numpy as sim_grid_to_numpy
+        gt_trans = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=np.float64)
+        for s, gt in enumerate(test_gts):
+            ig = test_detail["initial_states"][s]["grid"]
+            for y in range(map_h):
+                for x in range(map_w):
+                    gt_trans[TERRAIN_TO_CLASS.get(ig[y][x], 0)] += gt[y, x]
+        rs = np.maximum(gt_trans.sum(axis=1, keepdims=True), 1.0)
+        gt_T = gt_trans / rs
+        sim_params = params_from_transition_matrix(gt_T)
+        sim_params = sim_params._replace(expansion_base=sim_params.expansion_base * 1.3)
+
         for s, gt in enumerate(test_gts):
             init_grid = test_detail["initial_states"][s]["grid"]
             feat = compute_cell_features(init_grid, map_w, map_h,
@@ -198,8 +254,15 @@ def train_and_evaluate():
             pred = flat_pred.reshape(map_h, map_w, NUM_CLASSES)
             pred = np.maximum(pred, 1e-10)
             pred = pred / pred.sum(axis=-1, keepdims=True)
-            pred = apply_floor(pred)
-            scores.append(score_prediction(pred, gt))
+            scores.append(score_prediction(apply_floor(pred), gt))
+
+            # ML + sim blend
+            init_np = sim_grid_to_numpy(init_grid, map_h, map_w)
+            sim_pred = simulate_monte_carlo_vectorized(init_np, sim_params, n_sims=200, seed=42+s)
+            blend = 0.85 * pred + 0.15 * sim_pred
+            blend = np.maximum(blend, 1e-10)
+            blend = blend / blend.sum(axis=-1, keepdims=True)
+            scores_sim.append(score_prediction(apply_floor(blend), gt))
 
             # Baseline
             bpred = _apply_transition_matrix(test_detail, s, HISTORICAL_TRANSITIONS, map_w, map_h)
@@ -207,13 +270,15 @@ def train_and_evaluate():
             baseline_scores.append(score_prediction(bpred, gt))
 
         avg = np.mean(scores)
+        avg_sim = np.mean(scores_sim)
         bavg = np.mean(baseline_scores)
-        loro_results[test_rnum] = (avg, bavg)
-        print(f"  Test R{test_rnum}: spatial={avg:.2f}, baseline={bavg:.2f}, d={avg-bavg:+.2f}  seeds: {[f'{s:.1f}' for s in scores]}")
+        loro_results[test_rnum] = (avg, bavg, avg_sim)
+        print(f"  Test R{test_rnum}: spatial={avg:.2f}, +sim={avg_sim:.2f}(d={avg_sim-avg:+.2f}), baseline={bavg:.2f}  seeds: {[f'{s:.1f}' for s in scores]}")
 
     spatial_avg = np.mean([v[0] for v in loro_results.values()])
+    sim_avg = np.mean([v[2] for v in loro_results.values()])
     base_avg = np.mean([v[1] for v in loro_results.values()])
-    print(f"\n  LORO average:  spatial={spatial_avg:.2f}, baseline={base_avg:.2f}, d={spatial_avg-base_avg:+.2f}")
+    print(f"\n  LORO average:  spatial={spatial_avg:.2f}, +sim={sim_avg:.2f}(d={sim_avg-spatial_avg:+.2f}), baseline={base_avg:.2f}")
 
     # ── Update historical transitions from all data ──
     print("\n=== UPDATED TRANSITION MATRIX (all rounds) ===")
@@ -257,7 +322,8 @@ def train_and_evaluate():
     # ── Train final ensemble model on ALL rounds ──
     print("\n=== TRAINING FINAL ENSEMBLE (LGB 70% + XGB 30%, entropy-weighted) ===")
     X, Y, _, W = build_training_data_multi(ROUND_IDS, compute_weights=True)
-    print(f"  Training on {X.shape[0]} samples, {X.shape[1]} features")
+    aug_label = "8× D4 augmented" if USE_AUGMENTATION else "no augmentation"
+    print(f"  Training on {X.shape[0]} samples, {X.shape[1]} features ({aug_label})")
     print(f"  Entropy weight power: {ENTROPY_WEIGHT_POWER}")
 
     lgb_model = MultiOutputRegressor(
@@ -323,7 +389,7 @@ def train_and_evaluate():
     for from_cls in range(NUM_CLASSES):
         row = ", ".join(f"{new_transitions[from_cls, to_cls]:.4f}" for to_cls in range(NUM_CLASSES))
         comment = CLASS_NAMES[from_cls]
-        print(f"    [{row}],  # {comment} →")
+        print(f"    [{row}],  # {comment} ->")
     print("])")
 
     # ── Train MLP for triple-blend ──
@@ -337,11 +403,95 @@ def train_and_evaluate():
             "state_dict": mlp.state_dict(),
             "n_features": X.shape[1],
             "n_classes": NUM_CLASSES,
-            "hidden": [128, 64],
+            "hidden": [256, 128, 64],
         }, mlp_path)
         print(f"  MLP saved to {mlp_path}")
     except Exception as e:
         print(f"  MLP training skipped: {e}")
+
+    # ── Train learned debiaser: maps observation-derived features → GT features ──
+    print("\n=== TRAINING LEARNED DEBIASER ===")
+    try:
+        from sklearn.linear_model import Ridge
+        from astar.model import (observation_calibrated_transitions, debias_transitions,
+                                 compute_round_features, _extract_settlement_stats)
+
+        obs_feats_list = []
+        gt_feats_list = []
+        debiaser_rounds = []
+
+        for rnum, (rid, detail, gts) in sorted(all_data.items()):
+            # Check if this round has simulation data
+            rdir = Path("data") / f"round_{rid}"
+            sims = list(rdir.glob("sim_*.json"))
+            if len(sims) < 5:
+                print(f"  R{rnum}: no sim data ({len(sims)} files), skipping")
+                continue
+
+            cal_trans = observation_calibrated_transitions(rid, detail)
+            if cal_trans is None:
+                print(f"  R{rnum}: no calibrated transitions, skipping")
+                continue
+
+            debiased = debias_transitions(cal_trans)
+            sett_stats = _extract_settlement_stats(rid, detail)
+            pipeline_feats = compute_round_features(debiased, detail,
+                                                    settlement_stats=sett_stats)
+
+            gt_round_feats = compute_gt_round_features(detail, gts)
+
+            obs_feats_list.append(pipeline_feats)
+            gt_feats_list.append(gt_round_feats)
+            debiaser_rounds.append(rnum)
+
+        if len(obs_feats_list) >= 5:
+            X_obs = np.array(obs_feats_list)
+            Y_gt = np.array(gt_feats_list)
+            n_debiaser = len(debiaser_rounds)
+            print(f"  Training on {n_debiaser} rounds: {debiaser_rounds}")
+
+            # LOO evaluation
+            loo_mse_before = []
+            loo_mse_after = []
+            for i in range(n_debiaser):
+                X_tr = np.delete(X_obs, i, axis=0)
+                Y_tr = np.delete(Y_gt, i, axis=0)
+                X_te = X_obs[i:i+1]
+                Y_te = Y_gt[i:i+1]
+                ridge = Ridge(alpha=10.0)
+                ridge.fit(X_tr, Y_tr)
+                pred = ridge.predict(X_te)
+                mse_before = np.mean((X_te[0, :4] - Y_te[0, :4]) ** 2)
+                mse_after = np.mean((pred[0, :4] - Y_te[0, :4]) ** 2)
+                loo_mse_before.append(mse_before)
+                loo_mse_after.append(mse_after)
+                print(f"    LOO R{debiaser_rounds[i]}: MSE before={mse_before:.6f}, after={mse_after:.6f}, "
+                      f"{'BETTER' if mse_after < mse_before else 'WORSE'}")
+
+            avg_before = np.mean(loo_mse_before)
+            avg_after = np.mean(loo_mse_after)
+            print(f"  LOO avg MSE: before={avg_before:.6f}, after={avg_after:.6f}, "
+                  f"change={avg_after-avg_before:+.6f}")
+
+            if avg_after < avg_before:
+                # Fit final model on all data
+                final_debiaser = Ridge(alpha=10.0)
+                final_debiaser.fit(X_obs, Y_gt)
+                debiaser_path = Path("data") / "learned_debiaser.pkl"
+                debiaser_path.write_bytes(pickle.dumps(final_debiaser))
+                print(f"  Learned debiaser saved to {debiaser_path}")
+            else:
+                print("  Learned debiaser did NOT improve — NOT saving")
+                # Remove old model if it exists
+                debiaser_path = Path("data") / "learned_debiaser.pkl"
+                if debiaser_path.exists():
+                    debiaser_path.unlink()
+        else:
+            print(f"  Only {len(obs_feats_list)} rounds with sim data — need at least 5, skipping")
+    except Exception as e:
+        import traceback
+        print(f"  Debiaser training failed: {e}")
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

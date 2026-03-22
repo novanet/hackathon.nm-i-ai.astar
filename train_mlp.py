@@ -34,6 +34,7 @@ ROUND_IDS = {
     7: "36e581f1-73f8-453f-ab98-cbe3052b701b",
     8: "c5cdf100-a876-4fb7-b5d8-757162c97989",
     9: "2a341ace-0f57-4309-9b89-e59fe0f09179",
+    10: "75e625c3-60cb-4392-af3e-c86a98bde8c2",
 }
 
 ENTROPY_WEIGHT_POWER = 0.25
@@ -108,19 +109,37 @@ def build_training_data(round_ids: dict[int, str]):
 
 class KLDivMLP(nn.Module):
     def __init__(self, n_features: int, n_classes: int = 6,
-                 hidden: list[int] = [128, 64]):
+                 hidden: list[int] = [256, 128, 64]):
         super().__init__()
-        layers = []
-        prev = n_features
-        for h in hidden:
-            layers.extend([nn.Linear(prev, h), nn.ReLU(), nn.BatchNorm1d(h), nn.Dropout(0.1)])
+        # Input projection
+        self.input_proj = nn.Sequential(
+            nn.Linear(n_features, hidden[0]),
+            nn.ReLU(),
+            nn.BatchNorm1d(hidden[0]),
+            nn.Dropout(0.1),
+        )
+        # Residual blocks for deeper layers
+        self.res_blocks = nn.ModuleList()
+        self.res_projs = nn.ModuleList()  # projections for dimension changes
+        prev = hidden[0]
+        for h in hidden[1:]:
+            block = nn.Sequential(
+                nn.Linear(prev, h),
+                nn.ReLU(),
+                nn.BatchNorm1d(h),
+                nn.Dropout(0.1),
+            )
+            self.res_blocks.append(block)
+            # Linear projection for residual when dimensions differ
+            self.res_projs.append(nn.Linear(prev, h) if prev != h else nn.Identity())
             prev = h
-        layers.append(nn.Linear(prev, n_classes))
-        self.net = nn.Sequential(*layers)
+        self.head = nn.Linear(prev, n_classes)
 
     def forward(self, x):
-        logits = self.net(x)
-        # Log-softmax for numerical stability with KL loss
+        h = self.input_proj(x)
+        for block, proj in zip(self.res_blocks, self.res_projs):
+            h = block(h) + proj(h)
+        logits = self.head(h)
         return torch.log_softmax(logits, dim=-1)
 
 

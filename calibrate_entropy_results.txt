@@ -1,0 +1,90 @@
+=== COLLECTING LORO PREDICTIONS ===
+  R1: 5 seeds
+  R2: 5 seeds
+  R3: 5 seeds
+  R4: 5 seeds
+  R5: 5 seeds
+  R6: 5 seeds
+  R7: 5 seeds
+  R8: 5 seeds
+  R9: 5 seeds
+  R10: 5 seeds
+  R11: 5 seeds
+  R12: 5 seeds
+  R13: 5 seeds
+  R14: 5 seeds
+  R1: done (5 seeds)
+  R2: done (5 seeds)
+  R3: done (5 seeds)
+  R4: done (5 seeds)
+  R5: done (5 seeds)
+  R6: done (5 seeds)
+  R7: done (5 seeds)
+  R8: done (5 seeds)
+  R9: done (5 seeds)
+  R10: done (5 seeds)
+  R11: done (5 seeds)
+  R12: done (5 seeds)
+  R13: done (5 seeds)
+  R14: done (5 seeds)
+  Cached predictions to data\loro_preds_cache.npz
+
+  Entropy stats: mean=0.583, median=0.626, max=1.576, >0.1: 98678, >0.5: 65914
+  Bucket 'static' [0.0,0.1): 13322 cells, mean_pred_ent=0.024, mean_gt_ent=0.019
+  Bucket 'low' [0.1,0.4): 24831 cells, mean_pred_ent=0.265, mean_gt_ent=0.141
+  Bucket 'medium' [0.4,0.8): 36886 cells, mean_pred_ent=0.620, mean_gt_ent=0.481
+  Bucket 'high' [0.8,2.0): 36961 cells, mean_pred_ent=0.960, mean_gt_ent=0.844
+
+=== FITTING ISOTONIC CALIBRATION ===
+  Bucket 'static' [0.0, 0.1): 13322 cells (11.9%)
+    Class 0 (     Empty): MSE 0.000172 -> 0.000160 (-6.7%)
+    Class 1 (Settlement): MSE 0.000039 -> 0.000026 (-33.4%)
+    Class 2 (      Port): MSE 0.000004 -> 0.000001 (-64.4%)
+    Class 3 (      Ruin): MSE 0.000002 -> 0.000002 (-22.9%)
+    Class 4 (    Forest): MSE 0.000085 -> 0.000078 (-9.1%)
+    Class 5 (  Mountain): MSE 0.000003 -> 0.000000 (-100.0%)
+  Bucket 'low' [0.1, 0.4): 24831 cells (22.2%)
+    Class 0 (     Empty): MSE 0.002536 -> 0.002035 (-19.8%)
+    Class 1 (Settlement): MSE 0.000993 -> 0.000830 (-16.4%)
+    Class 2 (      Port): MSE 0.000089 -> 0.000055 (-37.9%)
+    Class 3 (      Ruin): MSE 0.000026 -> 0.000021 (-16.5%)
+    Class 4 (    Forest): MSE 0.001019 -> 0.000755 (-25.9%)
+    Class 5 (  Mountain): MSE 0.000165 -> 0.000000 (-100.0%)
+  Bucket 'medium' [0.4, 0.8): 36886 cells (32.9%)
+    Class 0 (     Empty): MSE 0.010709 -> 0.009672 (-9.7%)
+    Class 1 (Settlement): MSE 0.006957 -> 0.006049 (-13.0%)
+    Class 2 (      Port): MSE 0.000420 -> 0.000391 (-7.0%)
+    Class 3 (      Ruin): MSE 0.000099 -> 0.000097 (-2.1%)
+    Class 4 (    Forest): MSE 0.002984 -> 0.002768 (-7.2%)
+    Class 5 (  Mountain): MSE 0.000211 -> 0.000000 (-100.0%)
+  Bucket 'high' [0.8, 2.0): 36961 cells (33.0%)
+    Class 0 (     Empty): MSE 0.014820 -> 0.014053 (-5.2%)
+    Class 1 (Settlement): MSE 0.013838 -> 0.013382 (-3.3%)
+    Class 2 (      Port): MSE 0.001519 -> 0.001450 (-4.6%)
+    Class 3 (      Ruin): MSE 0.000205 -> 0.000196 (-4.5%)
+    Class 4 (    Forest): MSE 0.008262 -> 0.007734 (-6.4%)
+
+  Total calibrators fitted: 23
+
+=== EVALUATION: BASELINE vs CALIBRATED (from cache) ===
+  R 1: base=85.21  cal=84.16  d=-1.05 -
+  R 2: base=88.61  cal=86.55  d=-2.06 -
+  R 3: base=88.18  cal=90.28  d=+2.11 +
+  R 4: base=91.74  cal=90.17  d=-1.57 -
+  R 5: base=81.75  cal=79.73  d=-2.03 -
+  R 6: base=82.99  cal=80.52  d=-2.47 -
+  R 7: base=70.87  cal=72.14  d=+1.27 +
+  R 8: base=85.95  cal=84.45  d=-1.50 -
+  R 9: base=90.51  cal=88.37  d=-2.14 -
+  R10: base=90.90  cal=92.28  d=+1.38 +
+  R11: base=78.81  cal=77.08  d=-1.73 -
+  R12: base=61.40  cal=62.56  d=+1.17 +
+  R13: base=91.57  cal=91.02  d=-0.55 -
+  R14: base=81.23  cal=82.93  d=+1.70 +
+
+  LORO avg: base=83.55  cal=83.02  delta=-0.53
+  Improved: 5/14 rounds, Regressed: 9/14 rounds
+
+  Saved calibrators to data\entropy_calibrators.pkl
+
+  Wall-clock: 837s (14.0min)

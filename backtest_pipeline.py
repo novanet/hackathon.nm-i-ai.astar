@@ -11,7 +11,7 @@ importlib.reload(mod)
 
 from astar.model import build_prediction, apply_floor
 from astar.submit import score_prediction
-from train_mlp import load_round_data, ROUND_IDS
+from train_spatial import load_round_data, ROUND_IDS
 
 print("=== FULL PIPELINE BACKTEST (build_prediction) ===\n")
 
